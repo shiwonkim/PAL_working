@@ -294,6 +294,12 @@ notebooks/tmp_models
 HuggingFaceCache/
 results/
 
+# Symlinks to ~/STRUCTURE (refactor working copy; see CLAUDE.md). The trailing-slash
+# patterns above only match real dirs, not these symlinks, so ignore them explicitly.
+/data
+/results
+/HuggingFaceCache
+
 # Added during Server B prep cleanup
 logs/
 *.bak.*

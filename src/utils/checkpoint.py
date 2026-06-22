@@ -7,7 +7,7 @@ or moved (goal 2 of the refactor). The new format stores a self-describing dict:
 
     {
         "format":     "alignment_state_dict_v1",
-        "class_name": "BridgeAnchorTokenAlignmentLayer",
+        "class_name": "PALTokenAlignmentLayer",
         "input_dim":  1024,
         "kwargs":     {... alignment_layer_kwargs ...},
         "modality":   "image" | "text" | None,
@@ -31,6 +31,14 @@ from loguru import logger
 from src.alignment.alignment_factory import AlignmentFactory
 
 ALIGNMENT_FORMAT = "alignment_state_dict_v1"
+
+# Class-name aliases for checkpoints saved before the BridgeAnchor → PAL rename.
+# Lets pre-rename new-format checkpoints keep loading; drop once all checkpoints
+# store the PAL names.
+CLASS_NAME_ALIASES = {
+    "BridgeAnchorAlignmentLayer": "PALAlignmentLayer",
+    "BridgeAnchorTokenAlignmentLayer": "PALTokenAlignmentLayer",
+}
 
 
 def serialize_alignment_layer(
@@ -73,8 +81,9 @@ def load_alignment_layer(
     supports it, matching how the trainer builds layers.
     """
     if is_new_format(entry):
+        class_name = CLASS_NAME_ALIASES.get(entry["class_name"], entry["class_name"])
         module = AlignmentFactory.create(
-            entry["class_name"],
+            class_name,
             input_dim=entry["input_dim"],
             **entry["kwargs"],
         ).float()

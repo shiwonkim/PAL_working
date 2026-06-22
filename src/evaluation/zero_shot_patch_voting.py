@@ -6,7 +6,7 @@ This is the classification analogue of the segmentation anchor_codebook method.
 
 Usage:
     python src/evaluation/zero_shot_patch_voting.py \
-        --config configs/ba/vitl_roberta/token_k512.yaml \
+        --config configs/pal/vitl_roberta/token_k512.yaml \
         --checkpoint results/alignment-.../checkpoint-epoch400.pth \
         --layer-img 23 --layer-txt 24 \
         --datasets cifar10,cifar100,stl10,food101,imagenet,dtd \

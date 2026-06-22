@@ -27,7 +27,7 @@ Methods
                          (no alignment layer; baseline)
 2. ``freezealign``     — FreezeAlign ``local_vision_proj`` per-patch features
                          vs FreezeAlign full text forward (factorized decoding)
-3. ``anchor_codebook`` — BA-token: factorized S_pa @ S_ac decoding
+3. ``anchor_codebook`` — PAL-token: factorized S_pa @ S_ac decoding
 4. ``linear_perpatch`` — Linear/MLP per-patch projection (direct decoding)
 
 Text strategies
@@ -38,7 +38,7 @@ Text strategies
 Usage
 -----
     python src/evaluation/zero_shot_segmentation.py \\
-        --config configs/ba/vits_minilm/token_k256.yaml \\
+        --config configs/pal/vits_minilm/token_k256.yaml \\
         --checkpoint results/alignment-.../checkpoint-epochN.pth \\
         --layer-img 11 --layer-txt 6 \\
         --dataset voc2012 \\
@@ -377,8 +377,8 @@ class FreezeAlignMethod(SegmentationMethod):
         ).to(device)
 
 
-class BAAnchorCodebookMethod(SegmentationMethod):
-    """BridgeAnchors: each patch is encoded as a K-dim anchor-similarity
+class PALAnchorCodebookMethod(SegmentationMethod):
+    """PAL: each patch is encoded as a K-dim anchor-similarity
     vector; each class is encoded as a K-dim CAP profile. Both sides live
     in the same anchor codebook.
 
@@ -411,8 +411,8 @@ class BAAnchorCodebookMethod(SegmentationMethod):
         self, classnames, templates, tokenizer, language_model,
         layer_txt, device,
     ):
-        # CLS BA (BridgeAnchorAlignmentLayer) doesn't accept mask/token input.
-        is_cls_ba = type(self.alignment_text).__name__ == "BridgeAnchorAlignmentLayer"
+        # CLS PAL (PALAlignmentLayer) doesn't accept mask/token input.
+        is_cls_pal = type(self.alignment_text).__name__ == "PALAlignmentLayer"
         return build_zero_shot_classifier(
             language_model=language_model,
             tokenizer=tokenizer,
@@ -423,9 +423,9 @@ class BAAnchorCodebookMethod(SegmentationMethod):
             alignment_layer=self.alignment_text,
             num_classes_per_batch=8,
             device=device,
-            pool_txt="avg" if is_cls_ba else "none",
+            pool_txt="avg" if is_cls_pal else "none",
             save_path=None,
-            token_level=not is_cls_ba,
+            token_level=not is_cls_pal,
         ).to(device)
 
 
@@ -901,7 +901,7 @@ def build_method(
     if name == "anchor_codebook":
         if alignment_image is None:
             raise ValueError("anchor_codebook requires --checkpoint")
-        return BAAnchorCodebookMethod(
+        return PALAnchorCodebookMethod(
             alignment_image=alignment_image, alignment_text=alignment_text,
         )
     if name == "linear_perpatch":
@@ -921,15 +921,15 @@ def auto_filter_methods(
     """Drop methods that can't run with the given checkpoint/config.
 
     - No checkpoint     → only ``direct_cosine`` is allowed.
-    - BA checkpoint     → BA methods + direct_cosine OK, FreezeAlign dropped.
-    - FA checkpoint     → FreezeAlign + direct_cosine OK, BA methods dropped.
+    - PAL checkpoint    → PAL methods + direct_cosine OK, FreezeAlign dropped.
+    - FA checkpoint     → FreezeAlign + direct_cosine OK, PAL methods dropped.
     """
     available = set(requested)
     if alignment_image is None:
         return [m for m in requested if m == "direct_cosine"]
 
     layer_cls = type(alignment_image).__name__
-    is_ba = "BridgeAnchor" in layer_cls
+    is_pal = "PAL" in layer_cls
     is_fa = "FreezeAlign" in layer_cls
     is_linear_mlp = layer_cls in ("LinearAlignmentLayer", "ResLowRankHead", "MLPAlignmentLayer", "SAILStarMLP")
     keep = []
@@ -938,7 +938,7 @@ def auto_filter_methods(
             keep.append(m)
         elif m == "freezealign" and is_fa:
             keep.append(m)
-        elif m == "anchor_codebook" and is_ba:
+        elif m == "anchor_codebook" and is_pal:
             keep.append(m)
         elif m == "linear_perpatch" and is_linear_mlp:
             keep.append(m)
@@ -961,7 +961,7 @@ def load_config(path: str) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Zero-shot segmentation eval (STRUCTURE × BA × FreezeAlign)",
+        description="Zero-shot segmentation eval (STRUCTURE × PAL × FreezeAlign)",
     )
     parser.add_argument("--config", required=True, help="Training yaml")
     parser.add_argument(

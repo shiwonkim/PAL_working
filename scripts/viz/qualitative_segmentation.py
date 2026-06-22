@@ -5,7 +5,7 @@ Both methods use the 80-prompt ensemble text strategy on Pascal VOC 2012 val.
 
 Usage:
     PYTHONPATH=. python scripts/viz/qualitative_segmentation.py \
-        --ba-config   configs/ba/vits_minilm/token_k512.yaml \
+        --ba-config   configs/pal/vits_minilm/token_k512.yaml \
         --ba-ckpt     results/alignment-.../checkpoint-epoch490.pth \
         --fa-config   configs/freezealign/vits_minilm/fa_d512.yaml \
         --fa-ckpt     results/alignment-.../checkpoint-epoch551.pth \

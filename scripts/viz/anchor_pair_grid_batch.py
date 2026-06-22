@@ -7,7 +7,7 @@ Forwards each unique image at most once (cache keyed by (path, caption)).
 
 Usage:
     CUDA_VISIBLE_DEVICES=0 PYTHONPATH=. python scripts/viz/anchor_pair_grid_batch.py \
-        --config configs/ba/vitl_roberta/token_k512.yaml \
+        --config configs/pal/vitl_roberta/token_k512.yaml \
         --ckpt 'serverB/results/.../checkpoint-epoch373.pth' \
         --metadata drafts/figures/anchor_pair_candidates.json \
         --layer-img 23 --layer-txt 24 --gpu 0 \

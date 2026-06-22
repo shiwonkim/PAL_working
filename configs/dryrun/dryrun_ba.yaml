@@ -35,7 +35,7 @@ overrides:
         log_structural_preservation: false
         embedding_visualization: 9999
 
-        alignment_layer_name: "BridgeAnchorAlignmentLayer"
+        alignment_layer_name: "PALAlignmentLayer"
         alignment_layer_kwargs:
             num_anchors: 128
 

@@ -19,14 +19,14 @@ STRATS="raw,ensemble"
 
 # 8 Token-BA + FreezeAlign checkpoints. Fields: label | config | run | ckpt_rel
 RUNS=(
-  "seg_token_ba_k128|configs/ba/vits_minilm/token_k128.yaml|icy-vortex-10|(11, 6)_0.2739/checkpoints/checkpoint-epoch588.pth"
-  "seg_token_ba_k256|configs/ba/vits_minilm/token_k256.yaml|flowing-resonance-13|(11, 6)_0.2739/checkpoints/checkpoint-epoch411.pth"
-  "seg_token_ba_k512|configs/ba/vits_minilm/token_k512.yaml|wobbly-water-15|(11, 6)_0.2739/checkpoints/checkpoint-epoch490.pth"
+  "seg_token_ba_k128|configs/pal/vits_minilm/token_k128.yaml|icy-vortex-10|(11, 6)_0.2739/checkpoints/checkpoint-epoch588.pth"
+  "seg_token_ba_k256|configs/pal/vits_minilm/token_k256.yaml|flowing-resonance-13|(11, 6)_0.2739/checkpoints/checkpoint-epoch411.pth"
+  "seg_token_ba_k512|configs/pal/vits_minilm/token_k512.yaml|wobbly-water-15|(11, 6)_0.2739/checkpoints/checkpoint-epoch490.pth"
   "seg_fa_d512|configs/freezealign/vits_minilm/fa_d512.yaml|glowing-lake-14|(11, 6)_0.2739/checkpoints/checkpoint-epoch551.pth"
   "seg_fa_struct|configs/freezealign/vits_minilm/fa_d512_struct.yaml|faithful-salad-17|(11, 6)_0.2739/checkpoints/checkpoint-epoch999.pth"
-  "seg_token_ba_k128_p|configs/ba/vits_minilm/token_k128_prior.yaml|bright-resonance-21|(11, 6)_0.2739/checkpoints/checkpoint-epoch999.pth"
-  "seg_token_ba_k256_p|configs/ba/vits_minilm/token_k256_prior.yaml|feasible-wildflower-28|(11, 6)_0.2739/checkpoints/checkpoint-epoch499.pth"
-  "seg_token_ba_k512_p|configs/ba/vits_minilm/token_k512_prior.yaml|polished-feather-35|(11, 6)_0.2739/checkpoints/checkpoint-epoch490.pth"
+  "seg_token_ba_k128_p|configs/pal/vits_minilm/token_k128_prior.yaml|bright-resonance-21|(11, 6)_0.2739/checkpoints/checkpoint-epoch999.pth"
+  "seg_token_ba_k256_p|configs/pal/vits_minilm/token_k256_prior.yaml|feasible-wildflower-28|(11, 6)_0.2739/checkpoints/checkpoint-epoch499.pth"
+  "seg_token_ba_k512_p|configs/pal/vits_minilm/token_k512_prior.yaml|polished-feather-35|(11, 6)_0.2739/checkpoints/checkpoint-epoch490.pth"
 )
 
 # Dataset | data-root | extra args (e.g. --max-images for pascal_context)

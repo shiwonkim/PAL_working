@@ -13,7 +13,7 @@ Two modes:
 Usage:
     # Original per-anchor layout
     PYTHONPATH=. python scripts/viz/anchor_cross_modal.py \
-        --config configs/ba/vitl_roberta/token_k512.yaml \
+        --config configs/pal/vitl_roberta/token_k512.yaml \
         --ckpt results/alignment-.../checkpoint-epoch400.pth \
         --layer-img 23 --layer-txt 24 \
         --gpu 0 \
@@ -22,7 +22,7 @@ Usage:
 
     # Unified multi-anchor overlay
     PYTHONPATH=. python scripts/viz/anchor_cross_modal.py \
-        --config configs/ba/vitl_roberta/token_k512.yaml \
+        --config configs/pal/vitl_roberta/token_k512.yaml \
         --ckpt results/alignment-.../checkpoint-epoch400.pth \
         --mode unified --n-anchors 5 \
         --output drafts/figures/cross_modal_unified.png

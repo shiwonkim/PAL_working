@@ -23,7 +23,7 @@ Pipeline:
 
 Usage:
     PYTHONPATH=. python scripts/viz/anchor_pair_finder.py \
-        --config configs/ba/vitl_roberta/token_k512.yaml \
+        --config configs/pal/vitl_roberta/token_k512.yaml \
         --ckpt 'serverB/results/alignment-sentence_transformers_all_roberta_large_v1-vit_large_patch14_dinov2.lvd142m-polished-firefly-177/(23, 24)_nan/checkpoints/checkpoint-epoch373.pth' \
         --layer-img 23 --layer-txt 24 \
         --gpu 0 \

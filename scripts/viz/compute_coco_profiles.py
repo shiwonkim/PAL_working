@@ -28,7 +28,7 @@ import torchvision.transforms as transforms
 
 
 CKPT = "results/alignment-sentence_transformers_all_roberta_large_v1-vit_large_patch14_dinov2.lvd142m-generous-elevator-48/(23, 24)_0.2903/checkpoints/checkpoint-epoch400.pth"
-CONFIG = "configs/ba/vitl_roberta/token_k512.yaml"
+CONFIG = "configs/pal/vitl_roberta/token_k512.yaml"
 LAYER_IMG = 23
 LAYER_TXT = 24
 

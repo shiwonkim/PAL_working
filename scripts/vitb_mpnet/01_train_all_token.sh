@@ -19,9 +19,9 @@ LOGFILE="logs/vitb_mpnet_all_token_$(date '+%Y%m%d_%H%M').log"
 mkdir -p logs
 
 CONFIGS=(
-  "01_token_ba_k512      configs/ba/vitb_mpnet/token_k512.yaml"
-  "02_token_ba_k256      configs/ba/vitb_mpnet/token_k256.yaml"
-  "03_token_ba_k128      configs/ba/vitb_mpnet/token_k128.yaml"
+  "01_token_ba_k512      configs/pal/vitb_mpnet/token_k512.yaml"
+  "02_token_ba_k256      configs/pal/vitb_mpnet/token_k256.yaml"
+  "03_token_ba_k128      configs/pal/vitb_mpnet/token_k128.yaml"
   "04_linear_token       configs/linear/vitb_mpnet/linear_d512_token.yaml"
   "05_mlp_token          configs/mlp/vitb_mpnet/mlp_d512_token.yaml"
   "06_freezealign        configs/freezealign/vitb_mpnet/fa_d512.yaml"

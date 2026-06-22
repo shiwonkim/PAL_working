@@ -10,7 +10,7 @@ the same triplet of roles is reused across diverse images.
 
 Usage:
     CUDA_VISIBLE_DEVICES=0 PYTHONPATH=. python scripts/viz/anchor_group_filter.py \
-        --config configs/ba/vitl_roberta/token_k512.yaml \
+        --config configs/pal/vitl_roberta/token_k512.yaml \
         --ckpt 'serverB/.../checkpoint-epoch373.pth' \
         --groups '274,237|433,102,373|381,444,490' \
         --top-k 5 --n-samples 1500 \

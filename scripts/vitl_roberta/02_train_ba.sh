@@ -23,12 +23,12 @@ START=$(date +%s)
 echo "[$(date)] BridgeAnchors: ${ENCODER_TAG} on GPU ${GPU}" | tee "$LOG"
 
 CONFIGS=(
-    "01_cls_ba_k128    configs/ba/vitl_roberta/cls_k128.yaml"
-    "02_cls_ba_k256    configs/ba/vitl_roberta/cls_k256.yaml"
-    "03_cls_ba_k512    configs/ba/vitl_roberta/cls_k512.yaml"
-    "04_token_ba_k128  configs/ba/vitl_roberta/token_k128.yaml"
-    "05_token_ba_k256  configs/ba/vitl_roberta/token_k256.yaml"
-    "06_token_ba_k512  configs/ba/vitl_roberta/token_k512.yaml"
+    "01_cls_ba_k128    configs/pal/vitl_roberta/cls_k128.yaml"
+    "02_cls_ba_k256    configs/pal/vitl_roberta/cls_k256.yaml"
+    "03_cls_ba_k512    configs/pal/vitl_roberta/cls_k512.yaml"
+    "04_token_ba_k128  configs/pal/vitl_roberta/token_k128.yaml"
+    "05_token_ba_k256  configs/pal/vitl_roberta/token_k256.yaml"
+    "06_token_ba_k512  configs/pal/vitl_roberta/token_k512.yaml"
 )
 
 COMPLETED=()

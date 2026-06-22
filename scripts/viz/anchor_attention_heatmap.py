@@ -10,7 +10,7 @@ Grid: 3-4 rows (images) x (1 + N_anchors) columns.
 
 Usage:
     PYTHONPATH=. python scripts/viz/anchor_attention_heatmap.py \
-        --config  configs/ba/vits_minilm/token_k128.yaml \
+        --config  configs/pal/vits_minilm/token_k128.yaml \
         --ckpt    results/alignment-.../checkpoint-epoch588.pth \
         --gpu 0 \
         [--indices 15,100,400,850] \

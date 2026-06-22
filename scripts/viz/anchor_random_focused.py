@@ -7,7 +7,7 @@ cross-sample anchor sharing.
 
 Usage:
     CUDA_VISIBLE_DEVICES=0 PYTHONPATH=. python scripts/viz/anchor_random_focused.py \
-        --config configs/ba/vitl_roberta/token_k512.yaml \
+        --config configs/pal/vitl_roberta/token_k512.yaml \
         --ckpt 'serverB/.../checkpoint-epoch373.pth' \
         --layer-img 23 --layer-txt 24 --gpu 0 \
         --n-samples 10 --n-anchors 3 --strategy focused \

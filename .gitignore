@@ -321,3 +321,6 @@ verification/
 
 # Smoke-test outputs (local, throwaway)
 /smoke_results
+
+# firefly eval outputs (local, throwaway)
+/fireflyeval

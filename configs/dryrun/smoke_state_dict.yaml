@@ -1,0 +1,63 @@
+defaults: !include ../default.yaml
+
+# Smoke test for the state_dict checkpoint refactor: run a tiny token-BA
+# training cycle end-to-end and confirm fit() writes a loadable NEW-format
+# checkpoint. Reuses cached COCO encoders (ViT-S in ~/.cache, MiniLM in the
+# HuggingFaceCache symlink); features for the 2000/1000 subsample are extracted
+# fresh into ./smoke_results/features (frozen originals untouched).
+overrides:
+    paths:
+        save_path: "./smoke_results"
+
+    alignment:
+        llm_model_name: "sentence-transformers/all-MiniLM-L6-v2"
+        lvm_model_name: "vit_small_patch14_dinov2.lvd142m"
+
+    features:
+        dataset: "coco"
+        batch_size: 64
+        num_workers: 4
+        img_size: 224
+        # fixed layer pair (matches Batch-1 ViT-S/MiniLM) -> skips layer selection
+        layer_img: 11
+        layer_txt: 6
+
+    training:
+        token_level: true
+
+        n_epochs: 2
+        batch_size: 256
+        use_lr_finder: false
+        early_stopping: false
+        wandb_watch: false
+        visualize_original_embeddings: false
+        log_structural_preservation: false
+
+        # keep it tiny / fast
+        n_random_subsample_train: 2000
+        n_random_subsample_val: 1000
+
+        alignment_layer_name: "BridgeAnchorTokenAlignmentLayer"
+        alignment_layer_kwargs:
+            num_anchors: 128
+            pool_temperature: 0.03
+            projector_dim: 0
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 10
+            structure_lambda: 0   # MUST be 0 for token_level (structure_reg expects 2D)
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+        scheduler_name: "CosineAnnealingLR"
+        scheduler_kwargs: {}
+        scheduler_epoch_cycles: 2
+
+    evaluation:
+        token_level_zero_shot: true
+        zero_shot_datasets: []
+        retrieval_datasets: []

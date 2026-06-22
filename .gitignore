@@ -315,3 +315,9 @@ verification/
 
 # Migrated checkpoints (local artifacts mirroring frozen originals)
 /migrated
+
+# serverB symlink → ~/STRUCTURE/serverB (PAL ViT-L checkpoints)
+/serverB
+
+# Smoke-test outputs (local, throwaway)
+/smoke_results

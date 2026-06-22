@@ -26,6 +26,7 @@ from tqdm import tqdm, trange
 from src.alignment.alignment_factory import AlignmentFactory
 from src.utils.checkpoint import serialize_alignment_layer
 from src.utils.feature_spec import FeatureSpec
+from src.utils.feature_store import FeatureStore
 from src.core.src.datasets.downstream_tasks.coco_dataset import LoadingType
 from src.core.src.optimizers.utils import get_optimizer_type
 from src.core.src.utils.plotting import embedding_plot, embedding_plot_w_markers
@@ -116,14 +117,13 @@ class AlignmentTrainer(Trainer):
 
     @staticmethod
     def get_model_name(m_name: str):
-        return m_name.replace("/", "_").replace("-", "_")
+        return FeatureStore.model_name(m_name)
 
     @staticmethod
     def get_feature_save_path(
         m_name: str, d_name: str, save_path: Path, suffix: str = ""
     ):
-        m_name = AlignmentTrainer.get_model_name(m_name=m_name)
-        return save_path / "features" / f"{m_name}-{d_name}-{suffix}.npy"
+        return FeatureStore.cache_path(m_name, d_name, save_path, suffix)
 
     def add_exp_suffix_to_name(self, base_name: str):
         save_name = f"{base_name}"

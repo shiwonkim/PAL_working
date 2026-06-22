@@ -25,6 +25,7 @@ from tqdm import tqdm, trange
 
 from src.alignment.alignment_factory import AlignmentFactory
 from src.utils.checkpoint import serialize_alignment_layer
+from src.utils.feature_spec import FeatureSpec
 from src.core.src.datasets.downstream_tasks.coco_dataset import LoadingType
 from src.core.src.optimizers.utils import get_optimizer_type
 from src.core.src.utils.plotting import embedding_plot, embedding_plot_w_markers
@@ -1918,13 +1919,14 @@ class AlignmentTrainer(Trainer):
             # zero out the gradients
             optimizer.zero_grad()
 
-            # forward pass through alignment layers
+            # forward pass through alignment layers. forward(z, mask=None) is
+            # uniform across layers, so the call is the same in both modes — the
+            # mask is simply None when there are no token features (CLS mode).
             aligned_image_feats = alignment_image(image_feats)
-            if text_mask is not None:
-                text_mask_batch = text_mask[i:end_i].to(self.device)
-                aligned_text_feats = alignment_text(text_feats, mask=text_mask_batch)
-            else:
-                aligned_text_feats = alignment_text(text_feats)
+            text_mask_batch = (
+                text_mask[i:end_i].to(self.device) if text_mask is not None else None
+            )
+            aligned_text_feats = alignment_text(text_feats, mask=text_mask_batch)
 
             # additional unimodal data
             loss_kwargs = {}
@@ -2123,15 +2125,12 @@ class AlignmentTrainer(Trainer):
             text_feats = text_feats.float().cuda()
 
             aligned_image_feats = alignment_image(image_feats)
-            if text_mask is not None:
-                text_mask_batch = text_mask[i : i + self.train_batch_size].to(
-                    self.device
-                )
-                aligned_text_feats = alignment_text(
-                    text_feats, mask=text_mask_batch
-                )
-            else:
-                aligned_text_feats = alignment_text(text_feats)
+            text_mask_batch = (
+                text_mask[i : i + self.train_batch_size].to(self.device)
+                if text_mask is not None
+                else None
+            )
+            aligned_text_feats = alignment_text(text_feats, mask=text_mask_batch)
 
             val_loss_extra = {}
             if hasattr(self.loss, "logit_scale"):
@@ -2275,9 +2274,9 @@ class AlignmentTrainer(Trainer):
 
         # Token-level zero-shot is opt-in and only meaningful when the
         # alignment layers are token-aware (i.e. training.token_level=true).
-        token_level_zero_shot = bool(
-            self.config["evaluation"].get("token_level_zero_shot", False)
-        ) and bool(self.config["training"].get("token_level", False))
+        token_level_zero_shot = FeatureSpec.for_zero_shot(
+            self.config, "text"
+        ).token_level
 
         for eval_dataset_name, e_dataset in self.eval_zero_shot_datasets:
             set_transform_dataset(
@@ -2608,9 +2607,9 @@ class AlignmentTrainer(Trainer):
         alignment_image = alignment_image.to(self.device)
         alignment_text = alignment_text.to(self.device)
 
-        token_level_retrieval = bool(
-            self.config["training"].get("token_level", False)
-        )
+        token_level_retrieval = FeatureSpec.for_retrieval(
+            self.config, "text"
+        ).token_level
 
         for eval_dataset_name, e_dataset in self.eval_retrieval_datasets:
             eval_loader = DataLoader(

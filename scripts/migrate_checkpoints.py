@@ -25,6 +25,7 @@ import torch
 sys.path.insert(0, ".")  # repo root, so pickled `src.alignment.*` classes resolve
 
 from src.utils.checkpoint import (  # noqa: E402
+    CLASS_NAME_ALIASES,
     is_new_format,
     serialize_alignment_layer,
 )
@@ -49,6 +50,9 @@ def migrate_checkpoint(ckpt: dict) -> tuple[dict, int]:
     cfg = ckpt.get("config", {})
     training = cfg.get("training", {})
     class_name = training.get("alignment_layer_name")
+    # Old checkpoints' configs store pre-rename names; write the PAL name.
+    if class_name is not None:
+        class_name = CLASS_NAME_ALIASES.get(class_name, class_name)
     kwargs = training.get("alignment_layer_kwargs", {})
 
     converted = 0

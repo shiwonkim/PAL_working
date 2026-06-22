@@ -100,13 +100,13 @@ modality and calls `set_modality(...)` if present (~1839-1856).
 | Linear | `LinearAlignmentLayer` (`linear_alignment_layer.py`) | `Linear(z)`; 3D → masked mean-pool; opt L2 |
 | MLP | `MLPAlignmentLayer` (`mlp_alignment_layer.py`) | stacked ReLU MLP |
 | STRUCTURE "MLP" | `ResLowRankHead` (`mlp_alignment_layer.py` ~51) | skip `P(z)` + gated low-rank residual `α·W₂(GELU(W₁z))`, `α=σ(logit)` learned |
-| **BA-CLS** | `BridgeAnchorAlignmentLayer` (`bridge_anchor.py` ~57) | `normalize(normalize(z) @ normalize(anchors)ᵀ)` → `(B,K)` cosine profile |
-| **BA-Token ★** | `BridgeAnchorTokenAlignmentLayer` (`bridge_anchor_token.py` ~116) | **CAP**, see below |
+| **PAL-CLS** | `PALAlignmentLayer` (`pal.py` ~57) | `normalize(normalize(z) @ normalize(anchors)ᵀ)` → `(B,K)` cosine profile |
+| **PAL-Token ★** | `PALTokenAlignmentLayer` (`pal_token.py` ~116) | **CAP**, see below |
 | FreezeAlign | `FreezeAlignAlignmentLayer` (`freeze_align.py` ~195) | `set_modality`; img = patch-mean + CLS proj; txt = masked-mean + MLP |
 | SAIL | `SAILStarMLP` (`sail_star_mlp.py` ~81) | `set_modality`; GLU `g(ReLU6(f₁z)⊙f₂z)`, concat[cls,patch] |
 | CSA | `cca_class.py` | closed-form CCA; NOT an nn layer / not factory-registered |
 
-### ★ CAP — Cross-Attention Pooling (`bridge_anchor_token.py` ~116-184)
+### ★ CAP — Cross-Attention Pooling (`pal_token.py` ~116-184)
 K learnable anchors `(K,D)` **are** the alignment params (`projector_dim=0`, no
 downstream MLP). For token input `z:(B,T,D)`:
 ```
@@ -120,7 +120,7 @@ attn = softmax(logits, dim=1)         # (B,T,K)  each anchor soft-selects tokens
 profile = (attn * sim).sum(dim=1)     # (B,K)    per-anchor weighted sum
 return normalize(profile, -1)
 ```
-2D (CLS) input → falls back to the BA-CLS path (~124-128). This is the layer being
+2D (CLS) input → falls back to the PAL-CLS path (~124-128). This is the layer being
 refactored; the cls_attn-prior branch is inlined in forward.
 
 ---
@@ -158,7 +158,7 @@ Common: load ckpt → `alignment_{image,text}.eval()` → `set_modality` if pres
 
 **(c) Segmentation** — `zero_shot_segmentation.py` (CLI `main` ~1329)
 - `SegmentationMethod` subclasses: `direct_cosine`, **`anchor_codebook`
-  (BAAnchorCodebookMethod)**, `freezealign`, `linear_perpatch`.
+  (PALAnchorCodebookMethod)**, `freezealign`, `linear_perpatch`.
 - **factorized decoding**: `S_pa (P,K) @ S_ac (K,C) = (P,C)` — anchors as explicit
   bridge; vs **direct**: normalized patches @ text.
 - patch sims → `√P×√P` grid → bilinear upsample → argmax → **mIoU-fg** (foreground-
@@ -178,7 +178,7 @@ Common: load ckpt → `alignment_{image,text}.eval()` → `set_modality` if pres
 | extraction pool | cls/avg → `(N,D)` | none → `(N,T,D)` + mask |
 | alignment forward | `layer(z)` 2D | `layer(z, mask)` CAP |
 | ZS templates | CLS path | CAP path (`token_level_zero_shot`) |
-| methods | Linear / MLP / CSA / BA-CLS | BA-Token / FreezeAlign |
+| methods | Linear / MLP / CSA / PAL-CLS | PAL-Token / FreezeAlign |
 
 The same "if token: mask path; else: 2D path" branch is re-implemented in
 extraction, fit, and each eval — a prime consolidation target.
@@ -199,7 +199,7 @@ extraction, fit, and each eval — a prime consolidation target.
    prefetch).
 4. **Pool mode / layer slicing via in-place `config[...]=` overrides** in several
    places → side-effect risk; pass explicit params instead.
-5. **CAP layer** (`bridge_anchor_token.py`) is relatively clean; the cls_attn-prior
+5. **CAP layer** (`pal_token.py`) is relatively clean; the cls_attn-prior
    branch is inlined in forward and could be separated.
 
 ---

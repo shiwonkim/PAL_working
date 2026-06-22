@@ -1,15 +1,17 @@
 # PAL — refactor working copy
 
 **Read this first.** This repo (`PAL_working`) is a **code-only refactor copy** of the
-BridgeAnchors × STRUCTURE codebase. The goal here is to clean up and restructure the
+PAL × STRUCTURE codebase. The goal here is to clean up and restructure the
 code — **not** to run experiments. The original repo (`~/STRUCTURE`) keeps all data,
 feature caches, checkpoints, and the frozen, revision-ready code.
 
 ## What this repo is
 
 - A snapshot of the STRUCTURE codebase (tracked source only), imported for refactoring.
-- **"PAL"** is the method name (formerly "BridgeAnchors" / "BA"). The code still uses the
-  old `BridgeAnchor*` class names — renaming them to PAL is part of the refactor.
+- **"PAL"** (Projection-free Anchor Learning) is the method name, formerly "BridgeAnchors"
+  / "BA". The alignment layers are now the `PAL*` classes (`PALAlignmentLayer`,
+  `PALTokenAlignmentLayer`); a `CLASS_NAME_ALIASES` map in `src/utils/checkpoint.py` keeps
+  pre-rename checkpoints loading.
 - **No `data/`, `results/`, or checkpoints here.** To actually run training/eval, symlink
   them from the original repo:
   `cd ~/PAL_working && ln -s ~/STRUCTURE/data ~/STRUCTURE/results .`
@@ -33,11 +35,11 @@ feature caches, checkpoints, and the frozen, revision-ready code.
 
 ## Refactor goals (the plan)
 
-1. **Checkpoints → `state_dict`** instead of pickled module objects, so class
-   renames/restructuring don't break loading. Provide a migration path for the existing
-   pickled checkpoints in `~/STRUCTURE` (they store whole modules via
-   `torch.save(model)` / `torch.load(weights_only=False)`).
-2. **Rename classes to PAL** (e.g. `BridgeAnchorTokenAlignmentLayer` → a PAL/CAP name).
+1. **Checkpoints → `state_dict`** ✅ *done* — `src/utils/checkpoint.py` (serialize / load
+   with legacy + alias handling) and `scripts/migrate_checkpoints.py` convert the old
+   pickled-module checkpoints to a self-describing state_dict format.
+2. **Rename classes to PAL** ✅ *done* — `BridgeAnchor*` → `PAL*`, `configs/ba` →
+   `configs/pal`, with runtime class-name checks and checkpoint `class_name` strings updated.
 3. **Extract a FeatureStore** abstraction — cache load / mmap / dedup are currently
    inlined in `AlignmentTrainer.fit()`; this is also the right home for the LAION memory
    reimplementation (virtual-concat + mmap + buffer-shuffle + prefetch).
@@ -46,7 +48,7 @@ feature caches, checkpoints, and the frozen, revision-ready code.
    responsibilities.
 
 Already done upstream: `cls_attn_prior` (an unused, never-enabled feature) removed from
-the BA-token layer and the trainer.
+the PAL-token layer and the trainer.
 
 ## Conventions
 

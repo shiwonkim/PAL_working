@@ -17,7 +17,7 @@ class BaseAlignmentLayer(ABC, nn.Module):
         """Reduce 3D token tensors to 2D for structure regularization.
 
         Subclasses override this to match their pooling architecture.
-        Default: mean-pool all tokens (correct for Linear, MLP, BA).
+        Default: mean-pool all tokens (correct for Linear, MLP, PAL).
         """
         if z.dim() == 3:
             return z.mean(dim=1)

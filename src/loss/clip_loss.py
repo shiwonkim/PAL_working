@@ -72,7 +72,7 @@ def structure_reg(
     Preserves relationships at multiple scales.
 
     Both inputs must be 2D ``(B, D)``. For token-level alignment methods
-    (Token BA, FreezeAlign, token-Linear, token-MLP) the trainer passes
+    (Token PAL, FreezeAlign, token-Linear, token-MLP) the trainer passes
     the raw token tensor ``(B, T, D)`` as ``original_embeddings``; in
     that case we mean-pool across tokens to produce a per-sample summary
     ``(B, D)`` that matches the pooled output of the alignment layer.

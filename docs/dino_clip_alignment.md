@@ -1,24 +1,24 @@
-# DINOv2 ↔ CLIP Vision-Vision Alignment via BridgeAnchors
+# DINOv2 ↔ CLIP Vision-Vision Alignment via PAL
 
 ## Concept
 
-BridgeAnchors (BA) is a general representation bridging framework. Beyond cross-modal (vision-language) alignment, BA can align two vision encoders with complementary strengths:
+PAL is a general representation bridging framework. Beyond cross-modal (vision-language) alignment, PAL can align two vision encoders with complementary strengths:
 
 - **DINOv2**: excellent spatial/structural features, no language understanding
 - **CLIP**: language-aligned features, weaker spatial structure
 
-After BA alignment, DINOv2 features can be projected into CLIP's text-aligned space, gaining zero-shot language capabilities without any text training.
+After PAL alignment, DINOv2 features can be projected into CLIP's text-aligned space, gaining zero-shot language capabilities without any text training.
 
 ## Architecture
 
 ```
 Training (paired images, no text):
-  DINOv2 tokens (257×D_dino) → BridgeAnchorToken(D_dino, K) → K-dim profile
+  DINOv2 tokens (257×D_dino) → PALToken(D_dino, K) → K-dim profile
   ↔ contrastive loss ↔
-  CLIP vision tokens (257×D_clip) → BridgeAnchorToken(D_clip, K) ��� K-dim profile
+  CLIP vision tokens (257×D_clip) → PALToken(D_clip, K) ��� K-dim profile
 
 Text bridge (after vision-vision training):
-  CLIP vision projected (D_proj) → BridgeAnchor(D_proj, K) → K-dim profile
+  CLIP vision projected (D_proj) → PAL(D_proj, K) → K-dim profile
   Trained to match: align_clip(CLIP_vision_tokens) → K-dim target
 
 Inference (zero-shot classification):
@@ -37,9 +37,9 @@ Inference (zero-shot classification):
 | CLIP vision | `openai/clip-vit-large-patch14` | 1024 | 257 (16×16+CLS) | 768 |
 | CLIP text | (same model) | 768 | varies | 768 |
 
-- `align_dino`: `BridgeAnchorTokenAlignmentLayer(input_dim=768, K=512)`
-- `align_clip`: `BridgeAnchorTokenAlignmentLayer(input_dim=1024, K=512)`
-- `align_text`: `BridgeAnchorAlignmentLayer(input_dim=768, K=512)` (text bridge)
+- `align_dino`: `PALTokenAlignmentLayer(input_dim=768, K=512)`
+- `align_clip`: `PALTokenAlignmentLayer(input_dim=1024, K=512)`
+- `align_text`: `PALAlignmentLayer(input_dim=768, K=512)` (text bridge)
 
 **Script**: `scripts/dino_clip_token_alignment.py`
 **Status**: Running on Server A GPU 1
@@ -52,9 +52,9 @@ Inference (zero-shot classification):
 | CLIP vision | `openai/clip-vit-large-patch14` | 1024 | 257 (16×16+CLS) | 768 |
 | CLIP text | (same model) | 768 | varies | 768 |
 
-- `align_dino`: `BridgeAnchorTokenAlignmentLayer(input_dim=1024, K=512)`
-- `align_clip`: `BridgeAnchorTokenAlignmentLayer(input_dim=1024, K=512)`
-- `align_text`: `BridgeAnchorAlignmentLayer(input_dim=768, K=512)` (text bridge)
+- `align_dino`: `PALTokenAlignmentLayer(input_dim=1024, K=512)`
+- `align_clip`: `PALTokenAlignmentLayer(input_dim=1024, K=512)`
+- `align_text`: `PALAlignmentLayer(input_dim=768, K=512)` (text bridge)
 
 ## Code Changes for Server B
 
@@ -81,9 +81,9 @@ If features aren't cached yet, run the standard STRUCTURE feature extraction fir
 ### 3. DINOv2 input dimension
 ```python
 # Server A:
-align_dino = BridgeAnchorTokenAlignmentLayer(input_dim=768, ...)
+align_dino = PALTokenAlignmentLayer(input_dim=768, ...)
 # Server B (both DINOv2 and CLIP are 1024):
-align_dino = BridgeAnchorTokenAlignmentLayer(input_dim=1024, ...)
+align_dino = PALTokenAlignmentLayer(input_dim=1024, ...)
 ```
 
 ### 4. DINOv2 layer index for eval
@@ -109,7 +109,7 @@ CLIP ViT-L/14 is the same model on both servers. Feature extraction code is iden
    - Early stopping with patience 200
 
 3. **Phase 2: Text bridge** (~30 min)
-   - Train CLS-level BA to map CLIP projected (768) → K-dim
+   - Train CLS-level PAL to map CLIP projected (768) → K-dim
    - MSE loss to match token-level CLIP profiles
    - Early stopping with patience 100
 
@@ -121,14 +121,14 @@ CLIP ViT-L/14 is the same model on both servers. Feature extraction code is iden
 ## Expected Results
 
 DINOv2 (no language pretraining) should achieve meaningful zero-shot classification
-accuracy through the BA anchor bridge to CLIP's text space. The ViT-L↔ViT-L pairing
+accuracy through the PAL anchor bridge to CLIP's text space. The ViT-L↔ViT-L pairing
 (Server B) should outperform ViT-B↔ViT-L (Server A) since both sides are 1024-dim
 with no dimension mismatch.
 
 ## Training Data
 
 Uses COCO 2014 train (82,783 images) for training and COCO val (40,504) for validation.
-No text is used during BA training — only paired image features from both encoders.
+No text is used during PAL training — only paired image features from both encoders.
 
 ## Evaluation
 

@@ -21,7 +21,7 @@ code into `main`, we deferred all of it for a clean reimplementation.
 |---|---|
 | `scripts/laion/01_filter_parquet.py` … `04d_extract_cls_from_memmap.py` | LAION data pipeline: filter parquet → download images → select top-K → extract ViT-L/RoBERTa token features → memmap shards → CLS/avg extraction. **Trainer-independent; reusable as-is.** |
 | `scripts/laion/05_train_data_scaling.py` | The **actual** LAION training driver used for the appendix (COCO + LAION sweep 80K…917K). Calls `trainer.fit(n_random_additional_feats=N)` with the memmap config. Coupled to the dropped trainer path. |
-| `configs/ba/vitl_roberta/token_k512_laion.yaml` | Config with `add_img_feat_paths` / `add_txt_feat_paths` / `add_meta_path` (`.npy` memmap) that triggers the trainer's LAION-loading branch. |
+| `configs/pal/vitl_roberta/token_k512_laion.yaml` | Config with `add_img_feat_paths` / `add_txt_feat_paths` / `add_meta_path` (`.npy` memmap) that triggers the trainer's LAION-loading branch. |
 | `src/utils/memmap_features.py` (`ConcatFeatureStore`) | Disk-backed lazy concat of in-RAM COCO + on-disk LAION memmap. **This part is correct** (see §4). |
 | `alignment_trainer.py` LAION additions | `_torch_load_shared_mmap` (MAP_SHARED loader), the `~@1707` LAION-loading block, and the `_is_lazy` per-batch index branches. |
 | `src/train_laion_addition_alignment.py` | **Unused** initial-commit template — no script ever referenced it. Not the code that produced any results. (Real runs used `05_train_data_scaling.py`.) |
@@ -31,7 +31,7 @@ code into `main`, we deferred all of it for a clean reimplementation.
 git fetch origin
 git show origin/serverB:scripts/laion/05_train_data_scaling.py        # view one file
 git checkout origin/serverB -- scripts/laion/ \
-    configs/ba/vitl_roberta/token_k512_laion.yaml \
+    configs/pal/vitl_roberta/token_k512_laion.yaml \
     src/utils/memmap_features.py                                       # pull into tree
 git diff origin/main origin/serverB -- src/trainers/alignment_trainer.py  # see the trainer LAION diff
 ```

@@ -170,7 +170,7 @@ def build_zero_shot_classifier(
             if token_level:
                 # CAP-style head: pass the per-template attention mask so
                 # padding tokens are excluded from the softmax. The mask
-                # came in as int64; the BA-token layer cast-via .bool().
+                # came in as int64; the PAL-token layer cast-via .bool().
                 batch_attn_mask = token_inputs["attention_mask"].to(device)
                 class_embeddings = alignment_layer(
                     class_embeddings, mask=batch_attn_mask

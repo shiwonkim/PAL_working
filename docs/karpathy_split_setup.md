@@ -2,7 +2,7 @@
 
 ## Problem
 
-Our COCO retrieval evaluation was using the **full COCO 2014 val set (40,504 images)** instead of the standard **Karpathy 5K test split**. This made our retrieval R@1 numbers ~50% lower than published results (e.g., BA K=512: 20.6% on 40K vs 45.9% on 5K). All published papers (STRUCTURE, FreezeAlign, SAIL, CLIP) report on the Karpathy 5K split.
+Our COCO retrieval evaluation was using the **full COCO 2014 val set (40,504 images)** instead of the standard **Karpathy 5K test split**. This made our retrieval R@1 numbers ~50% lower than published results (e.g., PAL K=512: 20.6% on 40K vs 45.9% on 5K). All published papers (STRUCTURE, FreezeAlign, SAIL, CLIP) report on the Karpathy 5K split.
 
 Flickr30k was already correct — it uses the Karpathy 1K test split via `data/flickr30k/test.txt`.
 
@@ -122,7 +122,7 @@ print(f'coco_karpathy: {len(karp)} samples, {karp.df["image_path"].nunique()} un
 
 ## Impact on results
 
-Example: BA K=512 (ViT-S + MiniLM):
+Example: PAL K=512 (ViT-S + MiniLM):
 
 | Split | COCO I2T R@1 | COCO T2I R@1 |
 |---|---|---|
@@ -136,4 +136,4 @@ The 5K numbers are directly comparable to published results in STRUCTURE, Freeze
 - Old `--rt coco` still works exactly as before (full 40K)
 - Old feature caches are untouched
 - Training is completely unaffected
-- The `pool_method` backward compat fix (`getattr(self, "pool_method", "cap")` in `bridge_anchor_token.py`) ensures old BA checkpoints load correctly with the updated code
+- The `pool_method` backward compat fix (`getattr(self, "pool_method", "cap")` in `pal_token.py`) ensures old PAL checkpoints load correctly with the updated code

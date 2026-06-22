@@ -36,7 +36,7 @@ class PALAlignmentLayer(BaseAlignmentLayer):
         dim_alignment: int | None = None,
     ):
         super().__init__(input_dim=input_dim)
-        # For BA the output dim IS the anchor count, so dim_alignment aliases num_anchors.
+        # For PAL the output dim IS the anchor count, so dim_alignment aliases num_anchors.
         # num_anchors takes precedence if both are given (STRUCTURE's default.yaml sets dim_alignment).
         if num_anchors is None:
             if dim_alignment is None:

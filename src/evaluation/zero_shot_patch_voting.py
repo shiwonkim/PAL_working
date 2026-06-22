@@ -1,4 +1,4 @@
-"""Patch-level voting for zero-shot classification using BA anchor codebook.
+"""Patch-level voting for zero-shot classification using PAL anchor codebook.
 
 Instead of pooling all patches into a single CAP profile then classifying,
 each patch independently votes for a class via its anchor similarity profile.

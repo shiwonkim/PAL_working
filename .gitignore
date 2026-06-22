@@ -312,3 +312,6 @@ EXPERIMENT_STATUS.md
 
 # Refactor verification artifacts (golden tensors); keep the script, drop the .pt
 verification/
+
+# Migrated checkpoints (local artifacts mirroring frozen originals)
+/migrated

@@ -7,7 +7,7 @@ or moved (goal 2 of the refactor). The new format stores a self-describing dict:
 
     {
         "format":     "alignment_state_dict_v1",
-        "class_name": "PALTokenAlignmentLayer",
+        "class_name": "PALAlignmentLayer",
         "input_dim":  1024,
         "kwargs":     {... alignment_layer_kwargs ...},
         "modality":   "image" | "text" | None,
@@ -32,12 +32,14 @@ from src.alignment.alignment_factory import AlignmentFactory
 
 ALIGNMENT_FORMAT = "alignment_state_dict_v1"
 
-# Class-name aliases for checkpoints saved before the BridgeAnchor → PAL rename.
-# Lets pre-rename new-format checkpoints keep loading; drop once all checkpoints
-# store the PAL names.
+# Class-name aliases for checkpoints saved before the BridgeAnchor → PAL rename
+# and before the CLS/token PAL classes were merged into one PALAlignmentLayer.
+# Lets older new-format checkpoints keep loading; drop once all checkpoints store
+# the current PAL name.
 CLASS_NAME_ALIASES = {
     "BridgeAnchorAlignmentLayer": "PALAlignmentLayer",
-    "BridgeAnchorTokenAlignmentLayer": "PALTokenAlignmentLayer",
+    "BridgeAnchorTokenAlignmentLayer": "PALAlignmentLayer",
+    "PALTokenAlignmentLayer": "PALAlignmentLayer",
 }
 
 

@@ -390,10 +390,14 @@ class PALAnchorCodebookMethod(SegmentationMethod):
     name = "anchor_codebook"
     pool_txt = "none"
 
-    def __init__(self, alignment_image, alignment_text):
+    def __init__(self, alignment_image, alignment_text, token_level: bool = True):
         self.alignment_image = alignment_image
         self.alignment_text = alignment_text
         self.decoding = "factorized"
+        # CLS-vs-token is a config choice, not a class property (the merged
+        # PALAlignmentLayer serves both): the text templates must be encoded the
+        # same way the checkpoint's text side was trained.
+        self.token_level = token_level
 
     def get_patch_features(self, layer_feats, device):
         with torch.no_grad():
@@ -411,8 +415,6 @@ class PALAnchorCodebookMethod(SegmentationMethod):
         self, classnames, templates, tokenizer, language_model,
         layer_txt, device,
     ):
-        # CLS PAL (PALAlignmentLayer) doesn't accept mask/token input.
-        is_cls_pal = type(self.alignment_text).__name__ == "PALAlignmentLayer"
         return build_zero_shot_classifier(
             language_model=language_model,
             tokenizer=tokenizer,
@@ -423,9 +425,9 @@ class PALAnchorCodebookMethod(SegmentationMethod):
             alignment_layer=self.alignment_text,
             num_classes_per_batch=8,
             device=device,
-            pool_txt="avg" if is_cls_pal else "none",
+            pool_txt="none" if self.token_level else "avg",
             save_path=None,
-            token_level=not is_cls_pal,
+            token_level=self.token_level,
         ).to(device)
 
 
@@ -903,6 +905,7 @@ def build_method(
             raise ValueError("anchor_codebook requires --checkpoint")
         return PALAnchorCodebookMethod(
             alignment_image=alignment_image, alignment_text=alignment_text,
+            token_level=bool(cfg["training"].get("token_level", False)),
         )
     if name == "linear_perpatch":
         if alignment_image is None:

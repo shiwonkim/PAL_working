@@ -37,7 +37,7 @@ overrides:
         n_random_subsample_train: 2000
         n_random_subsample_val: 1000
 
-        alignment_layer_name: "PALTokenAlignmentLayer"
+        alignment_layer_name: "PALAlignmentLayer"
         alignment_layer_kwargs:
             num_anchors: 128
             pool_temperature: 0.03

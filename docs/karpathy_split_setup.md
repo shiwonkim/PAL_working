@@ -136,4 +136,4 @@ The 5K numbers are directly comparable to published results in STRUCTURE, Freeze
 - Old `--rt coco` still works exactly as before (full 40K)
 - Old feature caches are untouched
 - Training is completely unaffected
-- The `pool_method` backward compat fix (`getattr(self, "pool_method", "cap")` in `pal_token.py`) ensures old PAL checkpoints load correctly with the updated code
+- The `pool_method` backward compat fix (`getattr(self, "pool_method", "cap")` in `pal.py`) ensures old PAL checkpoints load correctly with the updated code

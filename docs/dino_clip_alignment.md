@@ -37,8 +37,8 @@ Inference (zero-shot classification):
 | CLIP vision | `openai/clip-vit-large-patch14` | 1024 | 257 (16×16+CLS) | 768 |
 | CLIP text | (same model) | 768 | varies | 768 |
 
-- `align_dino`: `PALTokenAlignmentLayer(input_dim=768, K=512)`
-- `align_clip`: `PALTokenAlignmentLayer(input_dim=1024, K=512)`
+- `align_dino`: `PALAlignmentLayer(input_dim=768, K=512)`
+- `align_clip`: `PALAlignmentLayer(input_dim=1024, K=512)`
 - `align_text`: `PALAlignmentLayer(input_dim=768, K=512)` (text bridge)
 
 **Script**: `scripts/dino_clip_token_alignment.py`
@@ -52,8 +52,8 @@ Inference (zero-shot classification):
 | CLIP vision | `openai/clip-vit-large-patch14` | 1024 | 257 (16×16+CLS) | 768 |
 | CLIP text | (same model) | 768 | varies | 768 |
 
-- `align_dino`: `PALTokenAlignmentLayer(input_dim=1024, K=512)`
-- `align_clip`: `PALTokenAlignmentLayer(input_dim=1024, K=512)`
+- `align_dino`: `PALAlignmentLayer(input_dim=1024, K=512)`
+- `align_clip`: `PALAlignmentLayer(input_dim=1024, K=512)`
 - `align_text`: `PALAlignmentLayer(input_dim=768, K=512)` (text bridge)
 
 ## Code Changes for Server B
@@ -81,9 +81,9 @@ If features aren't cached yet, run the standard STRUCTURE feature extraction fir
 ### 3. DINOv2 input dimension
 ```python
 # Server A:
-align_dino = PALTokenAlignmentLayer(input_dim=768, ...)
+align_dino = PALAlignmentLayer(input_dim=768, ...)
 # Server B (both DINOv2 and CLIP are 1024):
-align_dino = PALTokenAlignmentLayer(input_dim=1024, ...)
+align_dino = PALAlignmentLayer(input_dim=1024, ...)
 ```
 
 ### 4. DINOv2 layer index for eval

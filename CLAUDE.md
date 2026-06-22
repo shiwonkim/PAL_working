@@ -9,9 +9,10 @@ feature caches, checkpoints, and the frozen, revision-ready code.
 
 - A snapshot of the STRUCTURE codebase (tracked source only), imported for refactoring.
 - **"PAL"** (Projection-free Anchor Learning) is the method name, formerly "BridgeAnchors"
-  / "BA". The alignment layers are now the `PAL*` classes (`PALAlignmentLayer`,
-  `PALTokenAlignmentLayer`); a `CLASS_NAME_ALIASES` map in `src/utils/checkpoint.py` keeps
-  pre-rename checkpoints loading.
+  / "BA". The alignment layer is a single `PALAlignmentLayer` (`src/alignment/pal.py`) that
+  serves both modes — CLS (2D input → cosine profile) and token (3D input → CAP); which
+  mode runs is set by config `token_level`, not the class. A `CLASS_NAME_ALIASES` map in
+  `src/utils/checkpoint.py` keeps pre-rename / pre-merge checkpoints loading.
 - **No `data/`, `results/`, or checkpoints here.** To actually run training/eval, symlink
   them from the original repo:
   `cd ~/PAL_working && ln -s ~/STRUCTURE/data ~/STRUCTURE/results .`

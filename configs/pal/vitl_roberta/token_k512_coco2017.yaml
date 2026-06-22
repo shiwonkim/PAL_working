@@ -19,7 +19,7 @@ overrides:
     training:
         token_level: true
 
-        alignment_layer_name: "PALTokenAlignmentLayer"
+        alignment_layer_name: "PALAlignmentLayer"
         alignment_layer_kwargs:
             num_anchors: 512
             pool_temperature: 0.03

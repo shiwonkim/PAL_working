@@ -10,7 +10,9 @@ class BaseAlignmentLayer(ABC, nn.Module):
         self.input_dim = input_dim
 
     @abstractmethod
-    def forward(self, z: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, z: torch.Tensor, mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
         raise NotImplementedError
 
     def reduce_for_structure_reg(self, z: torch.Tensor) -> torch.Tensor:

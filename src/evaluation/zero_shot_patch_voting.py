@@ -39,6 +39,7 @@ from src.dataset_preparation.data_utils import get_datasets
 from src.evaluation.zero_shot_classifier import build_zero_shot_classifier
 from src.evaluation.consts import DATASETS_TO_CLASSES, DATASETS_TO_TEMPLATES
 from src.models.text.models import load_llm, load_tokenizer
+from src.utils.checkpoint import load_alignment_layer
 
 
 SIMPLE_TEMPLATE = ["{}"]
@@ -52,20 +53,13 @@ def _ensure_rgb_image(img):
 
 
 def load_checkpoint(config, ckpt_path, device):
-    """Load alignment layers from a checkpoint."""
+    """Load alignment layers from a checkpoint.
+
+    Handles both the new state_dict format and legacy pickled modules.
+    """
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-
-    alignment_image = ckpt["alignment_image"]
-    alignment_text = ckpt["alignment_text"]
-
-    if hasattr(alignment_image, "set_modality"):
-        alignment_image.set_modality("image")
-    if hasattr(alignment_text, "set_modality"):
-        alignment_text.set_modality("text")
-
-    alignment_image.eval().to(device)
-    alignment_text.eval().to(device)
-
+    alignment_image = load_alignment_layer(ckpt["alignment_image"], "image", device)
+    alignment_text = load_alignment_layer(ckpt["alignment_text"], "text", device)
     return alignment_image, alignment_text
 
 

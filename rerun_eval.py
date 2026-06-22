@@ -41,6 +41,7 @@ from src.dataset_preparation.data_utils import (  # noqa: E402
     get_default_transforms,
 )
 from src.trainers.alignment_trainer import AlignmentTrainer  # noqa: E402
+from src.utils.checkpoint import load_alignment_layer  # noqa: E402
 
 
 def main():
@@ -186,16 +187,14 @@ def main():
     )
     trainer.wandb_logging = False
 
-    # Load checkpoint
+    # Load checkpoint (handles both new state_dict format and legacy modules)
     ckpt = torch.load(args.ckpt, weights_only=False, map_location="cpu")
-    alignment_image = ckpt["alignment_image"].to(trainer.device)
-    alignment_text = ckpt["alignment_text"].to(trainer.device)
-    alignment_image.eval()
-    alignment_text.eval()
-    if hasattr(alignment_image, "set_modality"):
-        alignment_image.set_modality("image")
-    if hasattr(alignment_text, "set_modality"):
-        alignment_text.set_modality("text")
+    alignment_image = load_alignment_layer(
+        ckpt["alignment_image"], "image", trainer.device
+    )
+    alignment_text = load_alignment_layer(
+        ckpt["alignment_text"], "text", trainer.device
+    )
 
     layer_img = args.img_layer
     layer_txt = args.txt_layer

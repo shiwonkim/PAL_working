@@ -85,6 +85,7 @@ from src.dataset_preparation.data_utils import _ensure_rgb_image
 from src.evaluation.consts import DATASETS_TO_TEMPLATES
 from src.evaluation.zero_shot_classifier import build_zero_shot_classifier
 from src.models.text.models import load_llm, load_tokenizer
+from src.utils.checkpoint import load_alignment_layer
 
 # ------------------------------------------------------------------
 # Dataset specs
@@ -1384,15 +1385,8 @@ def main():
     if args.checkpoint:
         logger.info(f"Loading checkpoint: {args.checkpoint}")
         ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-        alignment_image = ckpt["alignment_image"].to(device).eval()
-        alignment_text = ckpt["alignment_text"].to(device).eval()
-        for m in (alignment_image, alignment_text):
-            if hasattr(m, "set_modality"):
-                pass  # modality set below
-        if hasattr(alignment_image, "set_modality"):
-            alignment_image.set_modality("image")
-        if hasattr(alignment_text, "set_modality"):
-            alignment_text.set_modality("text")
+        alignment_image = load_alignment_layer(ckpt["alignment_image"], "image", device)
+        alignment_text = load_alignment_layer(ckpt["alignment_text"], "text", device)
         logger.info(
             f"Alignment class: {type(alignment_image).__name__}"
         )

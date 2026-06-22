@@ -24,6 +24,7 @@ from torchvision.models.feature_extraction import create_feature_extractor
 from tqdm import tqdm, trange
 
 from src.alignment.alignment_factory import AlignmentFactory
+from src.utils.checkpoint import serialize_alignment_layer
 from src.core.src.datasets.downstream_tasks.coco_dataset import LoadingType
 from src.core.src.optimizers.utils import get_optimizer_type
 from src.core.src.utils.plotting import embedding_plot, embedding_plot_w_markers
@@ -1760,12 +1761,26 @@ class AlignmentTrainer(Trainer):
             # save the alignment
             if self.config["training"]["wandb_watch"]:
                 wandb.unwatch(models=[alignment_image, alignment_text])
+            layer_name = self.config["training"]["alignment_layer_name"]
+            layer_kwargs = self.config["training"]["alignment_layer_kwargs"]
             save_dict = {
                 "epoch": epoch,
                 "best_epoch": best_epoch,
                 "train_step": train_step,
-                "alignment_text": alignment_text,
-                "alignment_image": alignment_image,
+                "alignment_text": serialize_alignment_layer(
+                    alignment_text,
+                    class_name=layer_name,
+                    input_dim=text_dim,
+                    kwargs=layer_kwargs,
+                    modality="text",
+                ),
+                "alignment_image": serialize_alignment_layer(
+                    alignment_image,
+                    class_name=layer_name,
+                    input_dim=image_dim,
+                    kwargs=layer_kwargs,
+                    modality="image",
+                ),
                 "optimizer": optimizer.state_dict(),
                 "config": self.config,
                 "loss": self.loss.state_dict(),

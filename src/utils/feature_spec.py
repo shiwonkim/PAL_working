@@ -35,6 +35,29 @@ class FeatureSpec:
     img_size: Optional[int]       # image-only resolution (drives the cache tag)
     needs_mask: bool              # token_level and modality == "text"
 
+    def cache_suffix(
+        self, split: str, *, subsample_n: Optional[int] = None, zs: bool = False
+    ) -> str:
+        """The feature-cache suffix this spec implies for one split.
+
+        Single source of truth for the previously-scattered suffix builders.
+        Layout (reproduced byte-for-byte, so existing caches stay valid)::
+
+            {split}-{body}{res}{n}{zs}
+              body = none_layer-{layer}   if token (pool == "none")
+                     {pool}               otherwise  (cls / avg / last)
+              res  = -r{img_size}         image only (text has no resolution)
+              n    = -n{subsample_n}      when a subsample cap is in play
+              zs   = -zs                  zero-shot template caches
+
+        The companion ``_mask`` file is derived from the features path, not here.
+        """
+        body = f"none_layer-{self.layer_index}" if self.pool == "none" else self.pool
+        res = f"-r{int(self.img_size)}" if self.img_size is not None else ""
+        n = f"-n{subsample_n}" if subsample_n is not None else ""
+        z = "-zs" if zs else ""
+        return f"{split}-{body}{res}{n}{z}"
+
     @classmethod
     def _build(
         cls, config: dict, modality: str, token_level: bool,

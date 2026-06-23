@@ -219,6 +219,54 @@ class FeatureStore:
         del language_model
         return llm_feats
 
+    def load_or_build_text_mask(
+        self, loader, llm_model_name: str, suffix: str
+    ) -> torch.Tensor:
+        """Load cached text attention mask, or tokenise the loader to build one.
+
+        The main ``get_text_features`` call doesn't persist masks — we write a
+        companion file next to the features cache with the same base name
+        plus ``_mask`` suffix.
+        """
+        dataset_name = (
+            loader.dataset.name
+            if hasattr(loader.dataset, "name")
+            else type(loader.dataset).__name__
+        )
+        features_path = FeatureStore.cache_path(
+            m_name=llm_model_name,
+            d_name=dataset_name,
+            save_path=self.save_path,
+            suffix=suffix,
+        )
+        mask_path = features_path.with_name(
+            features_path.stem + "_mask" + features_path.suffix
+        )
+        if mask_path.exists():
+            payload = torch.load(mask_path, weights_only=False)
+            logger.debug(f"Loaded text mask from: {mask_path}")
+            return payload["mask"]
+
+        # Build masks by re-running the tokenizer over the dataloader.
+        _, tokenizer = self.get_llm(llm_model_name=llm_model_name)
+        loader.dataset.tokenizer = tokenizer
+        if hasattr(loader.dataset, "loading_type"):
+            loader.dataset.loading_type = LoadingType.TXT_ONLY
+        loader.dataset.apply_tokenizer()
+
+        masks = []
+        for batch in tqdm(
+            loader, total=len(loader), file=sys.stdout, desc=f"text-mask[{suffix}]"
+        ):
+            _, token_inputs = batch
+            masks.append(token_inputs["attention_mask"].cpu())
+        mask = torch.cat(masks, dim=0)
+
+        mask_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save({"mask": mask}, mask_path)
+        logger.debug(f"Saved text mask to: {mask_path}")
+        return mask
+
     def get_image_features(
         self,
         loader,

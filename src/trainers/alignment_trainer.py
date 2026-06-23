@@ -24,7 +24,6 @@ from src.alignment.alignment_factory import AlignmentFactory
 from src.utils.checkpoint import serialize_alignment_layer
 from src.utils.feature_spec import FeatureSpec
 from src.utils.feature_store import FeatureStore
-from src.core.src.datasets.downstream_tasks.coco_dataset import LoadingType
 from src.core.src.optimizers.utils import get_optimizer_type
 from src.core.src.utils.plotting import embedding_plot, embedding_plot_w_markers
 from src.core.src.utils.utils import EarlyStopping, clip_gradients, save_checkpoint
@@ -499,50 +498,9 @@ class AlignmentTrainer(Trainer):
     def _load_or_build_text_mask(
         self, loader, llm_model_name: str, suffix: str
     ) -> torch.Tensor:
-        """Load cached text attention mask, or tokenise the loader to build one.
-
-        The main ``get_text_features`` call doesn't persist masks — we write a
-        companion file next to the features cache with the same base name
-        plus ``_mask`` suffix.
-        """
-        dataset_name = (
-            loader.dataset.name
-            if hasattr(loader.dataset, "name")
-            else type(loader.dataset).__name__
+        return self.feature_store.load_or_build_text_mask(
+            loader, llm_model_name, suffix
         )
-        features_path = AlignmentTrainer.get_feature_save_path(
-            m_name=llm_model_name,
-            d_name=dataset_name,
-            save_path=self.save_path,
-            suffix=suffix,
-        )
-        mask_path = features_path.with_name(
-            features_path.stem + "_mask" + features_path.suffix
-        )
-        if mask_path.exists():
-            payload = torch.load(mask_path, weights_only=False)
-            logger.debug(f"Loaded text mask from: {mask_path}")
-            return payload["mask"]
-
-        # Build masks by re-running the tokenizer over the dataloader.
-        _, tokenizer = self.get_llm(llm_model_name=llm_model_name)
-        loader.dataset.tokenizer = tokenizer
-        if hasattr(loader.dataset, "loading_type"):
-            loader.dataset.loading_type = LoadingType.TXT_ONLY
-        loader.dataset.apply_tokenizer()
-
-        masks = []
-        for batch in tqdm(
-            loader, total=len(loader), file=sys.stdout, desc=f"text-mask[{suffix}]"
-        ):
-            _, token_inputs = batch
-            masks.append(token_inputs["attention_mask"].cpu())
-        mask = torch.cat(masks, dim=0)
-
-        mask_path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save({"mask": mask}, mask_path)
-        logger.debug(f"Saved text mask to: {mask_path}")
-        return mask
 
     def _load_eval_token_features(
         self,

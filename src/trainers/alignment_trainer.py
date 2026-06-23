@@ -1923,28 +1923,19 @@ class AlignmentTrainer(Trainer):
                 image_transform=image_transform,
             )
 
-            _img_size_cfg = self.config["features"].get("img_size")
-            _res_tag = (
-                f"-r{int(_img_size_cfg)}" if _img_size_cfg is not None else ""
+            # Token-mode image cache is (N, T, D) at the selected layer with a
+            # -zs tag; CLS mode is the pooled (N, D) cache. cache_suffix yields
+            # both from the spec (zs tag only in the token-zs path).
+            img_spec = FeatureSpec.for_zero_shot(
+                self.config, "image", layer_index=image_layer_idx
             )
-            if token_level_zero_shot:
-                # Token-mode image cache: (N, T, D) at the selected layer.
-                save_path_vision = AlignmentTrainer.get_feature_save_path(
-                    m_name=self.lvm_model_name,
-                    d_name=eval_dataset_name,
-                    save_path=self.save_path,
-                    suffix=(
-                        f"eval-none_layer-{int(image_layer_idx)}{_res_tag}-zs"
-                    ),
-                )
-            else:
-                save_path_vision = AlignmentTrainer.get_feature_save_path(
-                    m_name=self.lvm_model_name,
-                    d_name=eval_dataset_name,
-                    save_path=self.save_path,
-                    suffix=f"eval-{self.config['features']['pool_img']}{_res_tag}",
-                )
-            save_path_language = AlignmentTrainer.get_feature_save_path(
+            save_path_vision = FeatureStore.cache_path(
+                m_name=self.lvm_model_name,
+                d_name=eval_dataset_name,
+                save_path=self.save_path,
+                suffix=img_spec.cache_suffix("eval", zs=img_spec.token_level),
+            )
+            save_path_language = FeatureStore.cache_path(
                 m_name=self.llm_model_name,
                 d_name=eval_dataset_name,
                 save_path=self.save_path,
@@ -2271,14 +2262,11 @@ class AlignmentTrainer(Trainer):
                     txt_layer_idx=text_layer_idx,
                 )
             else:
-                _img_size_cfg = self.config["features"].get("img_size")
-                _res_tag = (
-                    f"-r{int(_img_size_cfg)}" if _img_size_cfg is not None else ""
-                )
+                img_spec = FeatureSpec.for_retrieval(self.config, "image")
                 image_features_val = self.get_image_features(
                     loader=eval_loader,
                     lvm_model_name=self.lvm_model_name,
-                    suffix=f"eval-{self.config['features']['pool_img']}{_res_tag}",
+                    suffix=img_spec.cache_suffix("eval"),
                 )
                 text_features_val = self.get_text_features(
                     loader=eval_loader,

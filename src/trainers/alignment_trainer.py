@@ -154,9 +154,12 @@ class AlignmentTrainer(Trainer):
         llm_model_name: str,
         suffix: str = "",
         dataset_name: Optional[str] = None,
+        pool: Optional[str] = None,
+        layer_index: Optional[int] = None,
     ):
         return self.feature_store.get_text_features(
-            loader, llm_model_name, suffix=suffix, dataset_name=dataset_name
+            loader, llm_model_name, suffix=suffix, dataset_name=dataset_name,
+            pool=pool, layer_index=layer_index,
         )
 
     def get_image_features(
@@ -166,6 +169,8 @@ class AlignmentTrainer(Trainer):
         suffix: str = "",
         dataset_name: Optional[str] = None,
         allow_image_dedup: bool = True,
+        pool: Optional[str] = None,
+        layer_index: Optional[int] = None,
     ):
         return self.feature_store.get_image_features(
             loader,
@@ -173,6 +178,8 @@ class AlignmentTrainer(Trainer):
             suffix=suffix,
             dataset_name=dataset_name,
             allow_image_dedup=allow_image_dedup,
+            pool=pool,
+            layer_index=layer_index,
         )
 
     def compute_layer_alignment(
@@ -406,93 +413,59 @@ class AlignmentTrainer(Trainer):
 
         Image masks are not needed (ViT uses all 1+num_patches tokens).
 
-        This method temporarily overrides ``features.pool_img`` /
-        ``features.pool_txt`` / ``features.layer_{img,txt}`` to reuse
-        STRUCTURE's existing ``pool=none`` single-layer extraction path,
-        then restores the original config. It also respects the
+        Pool/layer are passed explicitly to FeatureStore (token-level specs), so
+        no in-place ``features`` config override is needed. It also respects the
         ``training.n_random_subsample_{train,val}`` limits by wrapping the
         loaders in a subset view — token features are heavy (ViT-S/14
         produces 1370 tokens per image at DINOv2's default 518×518 input),
         and the dry-run path would otherwise balloon disk + memory usage.
         """
-        orig_cfg = self.config["features"]
-        save_pool_img = orig_cfg.get("pool_img")
-        save_pool_txt = orig_cfg.get("pool_txt")
-        save_layer_img = orig_cfg.get("layer_img")
-        save_layer_txt = orig_cfg.get("layer_txt")
-
-        orig_cfg["pool_img"] = "none"
-        orig_cfg["pool_txt"] = "none"
-        orig_cfg["layer_img"] = int(img_layer_idx)
-        orig_cfg["layer_txt"] = int(txt_layer_idx)
-
         # cap extraction to the effective training subset size
         max_train = self.config["training"].get("n_random_subsample_train")
         max_val = self.config["training"].get("n_random_subsample_val")
         train_loader = self._subsampled_loader(self.train_dataset, max_train)
         val_loader = self._subsampled_loader(self.val_dataset, max_val)
-        # suffix gets a -n{N} tag when using a subset so the cache is
-        # distinct from the "full" extraction
-        train_tag = f"-n{max_train}" if max_train is not None else ""
-        val_tag = f"-n{max_val}" if max_val is not None else ""
 
-        img_size = orig_cfg.get("img_size")
-        res_tag = f"-r{int(img_size)}" if img_size is not None else ""
-        try:
-            img_suffix = f"none_layer-{int(img_layer_idx)}{res_tag}"
-            txt_suffix = f"none_layer-{int(txt_layer_idx)}"
+        # Token-level (pool=none) specs pinned at the selected layers.
+        img_spec = FeatureSpec.for_training(
+            self.config, "image", layer_index=img_layer_idx
+        )
+        txt_spec = FeatureSpec.for_training(
+            self.config, "text", layer_index=txt_layer_idx
+        )
 
-            img_train = self.get_image_features(
-                loader=train_loader,
+        def _img(loader, split, n):
+            return self.get_image_features(
+                loader=loader,
                 lvm_model_name=self.lvm_model_name,
-                suffix=f"train-{img_suffix}{train_tag}",
+                suffix=img_spec.cache_suffix(split, subsample_n=n),
+                pool=img_spec.pool,
+                layer_index=img_spec.layer_index,
             )
-            img_val = self.get_image_features(
-                loader=val_loader,
-                lvm_model_name=self.lvm_model_name,
-                suffix=f"val-{img_suffix}{val_tag}",
-            )
-            txt_train = self.get_text_features(
-                loader=train_loader,
+
+        def _txt(loader, split, n):
+            return self.get_text_features(
+                loader=loader,
                 llm_model_name=self.llm_model_name,
-                suffix=f"train-{txt_suffix}{train_tag}",
+                suffix=txt_spec.cache_suffix(split, subsample_n=n),
+                pool=txt_spec.pool,
+                layer_index=txt_spec.layer_index,
             )
-            txt_val = self.get_text_features(
-                loader=val_loader,
+
+        def _mask(loader, split, n):
+            return self._load_or_build_text_mask(
+                loader=loader,
                 llm_model_name=self.llm_model_name,
-                suffix=f"val-{txt_suffix}{val_tag}",
+                suffix=txt_spec.cache_suffix(split, subsample_n=n),
             )
-            txt_mask_train = self._load_or_build_text_mask(
-                loader=train_loader,
-                llm_model_name=self.llm_model_name,
-                suffix=f"train-{txt_suffix}{train_tag}",
-            )
-            txt_mask_val = self._load_or_build_text_mask(
-                loader=val_loader,
-                llm_model_name=self.llm_model_name,
-                suffix=f"val-{txt_suffix}{val_tag}",
-            )
-        finally:
-            # restore original pooling config so the rest of the pipeline
-            # (eval, layer-selection metadata, etc.) behaves normally
-            orig_cfg["pool_img"] = save_pool_img
-            orig_cfg["pool_txt"] = save_pool_txt
-            if save_layer_img is None:
-                orig_cfg.pop("layer_img", None)
-            else:
-                orig_cfg["layer_img"] = save_layer_img
-            if save_layer_txt is None:
-                orig_cfg.pop("layer_txt", None)
-            else:
-                orig_cfg["layer_txt"] = save_layer_txt
 
         return {
-            "img_train": img_train,
-            "txt_train": txt_train,
-            "txt_mask_train": txt_mask_train,
-            "img_val": img_val,
-            "txt_val": txt_val,
-            "txt_mask_val": txt_mask_val,
+            "img_train": _img(train_loader, "train", max_train),
+            "txt_train": _txt(train_loader, "train", max_train),
+            "txt_mask_train": _mask(train_loader, "train", max_train),
+            "img_val": _img(val_loader, "val", max_val),
+            "txt_val": _txt(val_loader, "val", max_val),
+            "txt_mask_val": _mask(val_loader, "val", max_val),
         }
 
     def _load_or_build_text_mask(
@@ -510,57 +483,38 @@ class AlignmentTrainer(Trainer):
     ):
         """Load (or extract) token features + text mask for a retrieval eval set.
 
-        Temporarily flips ``pool_img``/``pool_txt`` to ``none`` and pins the
-        layer indices so that ``get_image_features``/``get_text_features``
-        write a single-layer token cache. Uses a distinct ``eval-*`` suffix
-        so it does not collide with training caches.
+        Pool/layer are passed explicitly to FeatureStore (token-level specs) with
+        a distinct ``eval-*`` suffix so it does not collide with training caches.
         """
-        orig_cfg = self.config["features"]
-        save_pool_img = orig_cfg.get("pool_img")
-        save_pool_txt = orig_cfg.get("pool_txt")
-        save_layer_img = orig_cfg.get("layer_img")
-        save_layer_txt = orig_cfg.get("layer_txt")
-
-        orig_cfg["pool_img"] = "none"
-        orig_cfg["pool_txt"] = "none"
-        orig_cfg["layer_img"] = int(img_layer_idx)
-        orig_cfg["layer_txt"] = int(txt_layer_idx)
-
-        img_size = orig_cfg.get("img_size")
-        res_tag = f"-r{int(img_size)}" if img_size is not None else ""
-        img_suffix = f"eval-none_layer-{int(img_layer_idx)}{res_tag}"
-        txt_suffix = f"eval-none_layer-{int(txt_layer_idx)}"
-        try:
-            # Eval val cache MUST stay aligned 1:1 with the eval text cache
-            # (same row count) because the retrieval per-batch loop slices
-            # both with a shared `i` index. Disable image dedup here.
-            img_feats = self.get_image_features(
-                loader=eval_loader,
-                lvm_model_name=self.lvm_model_name,
-                suffix=img_suffix,
-                allow_image_dedup=False,
-            )
-            txt_feats = self.get_text_features(
-                loader=eval_loader,
-                llm_model_name=self.llm_model_name,
-                suffix=txt_suffix,
-            )
-            txt_mask = self._load_or_build_text_mask(
-                loader=eval_loader,
-                llm_model_name=self.llm_model_name,
-                suffix=txt_suffix,
-            )
-        finally:
-            orig_cfg["pool_img"] = save_pool_img
-            orig_cfg["pool_txt"] = save_pool_txt
-            if save_layer_img is None:
-                orig_cfg.pop("layer_img", None)
-            else:
-                orig_cfg["layer_img"] = save_layer_img
-            if save_layer_txt is None:
-                orig_cfg.pop("layer_txt", None)
-            else:
-                orig_cfg["layer_txt"] = save_layer_txt
+        img_spec = FeatureSpec.for_retrieval(
+            self.config, "image", layer_index=img_layer_idx
+        )
+        txt_spec = FeatureSpec.for_retrieval(
+            self.config, "text", layer_index=txt_layer_idx
+        )
+        # Eval cache MUST stay aligned 1:1 with the eval text cache (same row
+        # count) because the retrieval per-batch loop slices both with a shared
+        # `i` index. Disable image dedup here.
+        img_feats = self.get_image_features(
+            loader=eval_loader,
+            lvm_model_name=self.lvm_model_name,
+            suffix=img_spec.cache_suffix("eval"),
+            pool=img_spec.pool,
+            layer_index=img_spec.layer_index,
+            allow_image_dedup=False,
+        )
+        txt_feats = self.get_text_features(
+            loader=eval_loader,
+            llm_model_name=self.llm_model_name,
+            suffix=txt_spec.cache_suffix("eval"),
+            pool=txt_spec.pool,
+            layer_index=txt_spec.layer_index,
+        )
+        txt_mask = self._load_or_build_text_mask(
+            loader=eval_loader,
+            llm_model_name=self.llm_model_name,
+            suffix=txt_spec.cache_suffix("eval"),
+        )
         return img_feats, txt_feats, txt_mask
 
     # ---------------------------------------------------------------------

@@ -115,7 +115,16 @@ class FeatureStore:
         llm_model_name: str,
         suffix: str = "",
         dataset_name: Optional[str] = None,
+        pool: Optional[str] = None,
+        layer_index: Optional[int] = None,
     ):
+        # pool / layer default to the config (back-compat); callers may pass them
+        # explicitly so the in-place config override is no longer needed.
+        pool_txt_mode = pool if pool is not None else self.config["features"]["pool_txt"]
+        layer_txt = (
+            layer_index if layer_index is not None
+            else self.config["features"].get("layer_txt")
+        )
         if hasattr(loader.dataset, "name"):
             dataset_name = loader.dataset.name
         elif dataset_name is None:
@@ -149,7 +158,6 @@ class FeatureStore:
         assert loader.dataset.df.equals(_df)
         del _df
 
-        pool_txt_mode = self.config["features"]["pool_txt"]
         llm_feats = None
         offset = 0
         total_n = len(loader.dataset)
@@ -182,12 +190,12 @@ class FeatureStore:
                     feats = [v[:, -1, :] for v in llm_output["hidden_states"]]
                     feats = torch.stack(feats).permute(1, 0, 2)
                 elif pool_txt_mode == "none":
-                    assert self.config["features"].get("layer_txt") is not None
+                    assert layer_txt is not None
                     feats = torch.stack(list(llm_output["hidden_states"]))
                     # permute to dim: (bs, layers, tokens, dim)
                     feats = feats.permute(1, 0, 2, 3)
                     # select only the layer we care about, otherwise we don't have enough memory
-                    feats = feats[:, self.config["features"]["layer_txt"], :, :]
+                    feats = feats[:, layer_txt, :, :]
                 else:
                     raise NotImplementedError(f"unknown pooling {pool_txt_mode}")
 
@@ -274,7 +282,16 @@ class FeatureStore:
         suffix: str = "",
         dataset_name: Optional[str] = None,
         allow_image_dedup: bool = True,
+        pool: Optional[str] = None,
+        layer_index: Optional[int] = None,
     ):
+        # pool / layer default to the config (back-compat); callers may pass them
+        # explicitly so the in-place config override is no longer needed.
+        pool_mode = pool if pool is not None else self.config["features"]["pool_img"]
+        layer_img = (
+            layer_index if layer_index is not None
+            else self.config["features"].get("layer_img")
+        )
         if hasattr(loader.dataset, "name"):
             dataset_name = loader.dataset.name
         elif dataset_name is None:
@@ -300,7 +317,6 @@ class FeatureStore:
             image_transform=image_transform,
         )
 
-        pool_mode = self.config["features"]["pool_img"]
         # Image-side dedup at extraction: pool=none caches duplicate the same
         # image 5x in COCO (one row per caption). Detect that and iterate
         # only the first-occurrence rows of each unique image_path. Saves
@@ -365,12 +381,12 @@ class FeatureStore:
                     feats = [v[:, 0, :] for v in lvm_output.values()]
                     feats = torch.stack(feats).permute(1, 0, 2)
                 elif pool_mode == "none":
-                    assert self.config["features"].get("layer_img") is not None
+                    assert layer_img is not None
                     feats = torch.stack(list(lvm_output.values()))
                     # permute to dim: (bs, layers, tokens, dim)
                     feats = feats.permute(1, 0, 2, 3)
                     # select only the layer we care about, otherwise we don't have enough memory
-                    feats = feats[:, self.config["features"]["layer_img"], :, :]
+                    feats = feats[:, layer_img, :, :]
                 else:
                     raise NotImplementedError(f"unknown pooling {pool_mode}")
 

@@ -324,3 +324,6 @@ verification/
 
 # firefly eval outputs (local, throwaway)
 /fireflyeval
+
+# local verification eval configs (recreated per run, save_path → ./fireflyeval)
+configs/pal/vitl_roberta/*_evallocal.yaml

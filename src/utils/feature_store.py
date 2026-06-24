@@ -67,6 +67,22 @@ class FeatureStore:
         stem = f"{FeatureStore.model_name(m_name)}-{d_name}-{suffix}.npy"
         return Path(save_path) / "features" / stem
 
+    @staticmethod
+    def _missing_cache_error(save_path: Path) -> RuntimeError:
+        """Build the error raised when ``require_cached`` hits a cache miss.
+
+        Names the absent cache file and points at the extraction stage so a
+        train/eval run never silently spins up encoders for a missing cache.
+        """
+        return RuntimeError(
+            "Feature cache not found and require_cached=True:\n"
+            f"  {save_path}\n"
+            "Run the extraction stage first to materialise it, e.g.\n"
+            "  python -m src.extract --config_path <your-config>\n"
+            "(or scripts/run_pipeline.sh). The train/eval stage refuses to run "
+            "encoders when require_cached=True."
+        )
+
     # ------------------------------------------------------------------
     # Encoders (built only on cache miss)
     # ------------------------------------------------------------------
@@ -117,6 +133,7 @@ class FeatureStore:
         dataset_name: Optional[str] = None,
         pool: Optional[str] = None,
         layer_index: Optional[int] = None,
+        require_cached: bool = False,
     ):
         # pool / layer default to the config (back-compat); callers may pass them
         # explicitly so the in-place config override is no longer needed.
@@ -135,6 +152,9 @@ class FeatureStore:
             save_path=self.save_path,
             suffix=suffix,
         )
+
+        if require_cached and not save_path.exists():
+            raise FeatureStore._missing_cache_error(save_path)
 
         if save_path.exists():
             # mmap=True: feature cache is file-backed, pages shared via
@@ -228,7 +248,8 @@ class FeatureStore:
         return llm_feats
 
     def load_or_build_text_mask(
-        self, loader, llm_model_name: str, suffix: str
+        self, loader, llm_model_name: str, suffix: str,
+        require_cached: bool = False,
     ) -> torch.Tensor:
         """Load cached text attention mask, or tokenise the loader to build one.
 
@@ -250,6 +271,8 @@ class FeatureStore:
         mask_path = features_path.with_name(
             features_path.stem + "_mask" + features_path.suffix
         )
+        if require_cached and not mask_path.exists():
+            raise FeatureStore._missing_cache_error(mask_path)
         if mask_path.exists():
             payload = torch.load(mask_path, weights_only=False)
             logger.debug(f"Loaded text mask from: {mask_path}")
@@ -284,6 +307,7 @@ class FeatureStore:
         allow_image_dedup: bool = True,
         pool: Optional[str] = None,
         layer_index: Optional[int] = None,
+        require_cached: bool = False,
     ):
         # pool / layer default to the config (back-compat); callers may pass them
         # explicitly so the in-place config override is no longer needed.
@@ -302,6 +326,9 @@ class FeatureStore:
             save_path=self.save_path,
             suffix=suffix,
         )
+
+        if require_cached and not save_path.exists():
+            raise FeatureStore._missing_cache_error(save_path)
 
         if save_path.exists():
             # mmap=True: see get_text_features cache load for rationale.

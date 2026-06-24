@@ -79,27 +79,23 @@ def load_dataset(
     return train_dataset, val_dataset
 
 
-parser = argparse.ArgumentParser(
-    description="Experiments for the Representation Alignment.",
-)
-parser.add_argument(
-    "--config_path",
-    type=str,
-    required=True,
-    help="Path to the config yaml.",
-)
-parser.add_argument(
-    "--wandb_notes",
-    type=str,
-    help="Notes for the wandb run.",
-)
-args = parser.parse_args()
+def run(
+    config_path,
+    wandb_notes=None,
+    extract_only: bool = False,
+    require_cached: bool = False,
+):
+    """Build the trainer from a config and run ``fit()``.
 
-if __name__ == "__main__":
-    args.config_path = Path(args.config_path)
-    if not args.config_path.exists():
-        raise ValueError(f"Unable to find config yaml file: {args.config_path}")
-    with open(args.config_path, "r") as f:
+    Single setup path shared by the stage CLIs (goal 3.2): ``extract.py``
+    calls it with ``extract_only=True`` (encoders → cache, no training),
+    ``train.py`` with ``require_cached=True`` (cache only, no encoders), and
+    ``train_alignment.py`` with both False (the original extract+train run).
+    """
+    config_path = Path(config_path)
+    if not config_path.exists():
+        raise ValueError(f"Unable to find config yaml file: {config_path}")
+    with open(config_path, "r") as f:
         config = yaml.load(f, Loader=Loader)
     # merge defaults with overrides (overrides take precedence)
     config = merge_dicts(config.get("defaults", {}), config.get("overrides", {}))
@@ -199,7 +195,7 @@ if __name__ == "__main__":
         "val_dataset": val_dataset,
         "eval_zero_shot_datasets": eval_zero_shot_datasets,
         "eval_retrieval_datasets": eval_retrieval_datasets,
-        "wandb_notes": args.wandb_notes,
+        "wandb_notes": wandb_notes,
     }
     trainer_kwargs = trainer_kwargs | config["alignment"]
     if "cca" in config["training"].keys() and config["training"]["cca"]:
@@ -212,5 +208,28 @@ if __name__ == "__main__":
         additional_unimodal_data=additional_unimodal_data,
         n_random_subsample_train=config["training"].get("n_random_subsample_train"),
         n_random_subsample_val=config["training"].get("n_random_subsample_val"),
+        extract_only=extract_only,
+        require_cached=require_cached,
     )
     del trainer
+
+
+def build_arg_parser(description="Experiments for the Representation Alignment."):
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        "--config_path",
+        type=str,
+        required=True,
+        help="Path to the config yaml.",
+    )
+    parser.add_argument(
+        "--wandb_notes",
+        type=str,
+        help="Notes for the wandb run.",
+    )
+    return parser
+
+
+if __name__ == "__main__":
+    args = build_arg_parser().parse_args()
+    run(config_path=args.config_path, wandb_notes=args.wandb_notes)

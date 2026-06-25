@@ -3,6 +3,7 @@ import copy
 import gc
 import math
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -51,6 +52,28 @@ from src.utils.utils import (
     set_transform_dataset,
     trustworthiness,
 )
+
+
+@dataclass
+class PreparedFeatures:
+    """Output of ``AlignmentTrainer.prepare_features`` (fit phases A+B+C).
+
+    Holds the post-dedup / post-subsample whole-set feature tensors plus the
+    selection bookkeeping the per-combo training loop needs. Mutable on
+    purpose: the combo loop nulls the heavy whole-set tensors mid-iteration to
+    release memory before training (mirrors the old in-fit ``del``).
+    """
+
+    image_features_train: torch.Tensor
+    text_features_train: torch.Tensor
+    image_features_val: torch.Tensor
+    text_features_val: torch.Tensor
+    sel_train_indices: object
+    sel_val_indices: object
+    token_subsample_train_idx: Optional[torch.Tensor]
+    additional_image_features: Optional[torch.Tensor]
+    additional_text_features: Optional[torch.Tensor]
+    sampled_df_alignment: "pd.DataFrame"
 
 
 class AlignmentTrainer(Trainer):
@@ -622,22 +645,24 @@ class AlignmentTrainer(Trainer):
         )
         return avg
 
-    def fit(
+    def prepare_features(
         self,
         n_random_subsample_train: Optional[int] = None,
         n_random_subsample_val: Optional[int] = None,
         additional_unimodal_data: Optional[Dict[str, list]] = None,
-        n_random_additional_feats: Optional[int] = None,
-        extract_only: bool = False,
-        require_cached: bool = False,
-    ):
-        # Stage-decoupling flags (goal 3.2). require_cached forbids encoder
-        # runs (train/eval stages read cache only); extract_only stops after
-        # feature prep so the extraction stage writes caches without training.
-        # extract_only implies the loads must run encoders, so it never sets
-        # require_cached. Stored on self so the get_*_features wrappers — and
-        # the nested token-bundle loads — pick it up.
-        self._require_cached = require_cached
+    ) -> "PreparedFeatures":
+        """fit phases A+B+C: load + dedup + subsample features, pick layers.
+
+        Loads the val/train image+text features (CLS view, unified-cache view,
+        or a token-mode stub), applies ``drop_duplicates`` dedup and
+        ``n_random_subsample_*``, gathers any additional unimodal data, and
+        computes (or pins) the layer combinations to train. Returns a
+        :class:`PreparedFeatures` the per-combo training loop consumes.
+
+        Honours ``self._require_cached`` (set by ``fit``) on every feature
+        load. Reading + writing ``self.{image,text}_features_{train,val}`` is
+        intentional — it is the in-process feature cache fit() relied on.
+        """
         # pre-compute the embeddings from both modalities
         # first embed the validation set since we're returning
         # the models for the training set
@@ -949,518 +974,599 @@ class AlignmentTrainer(Trainer):
                 np.nan,
             ]
 
-        # for each sampled combination
-        # train the alignment between the representations
-        print(sampled_df_alignment)
-        comb_iter = sampled_df_alignment.iterrows()
+        return PreparedFeatures(
+            image_features_train=image_features_train,
+            text_features_train=text_features_train,
+            image_features_val=image_features_val,
+            text_features_val=text_features_val,
+            sel_train_indices=sel_train_indices,
+            sel_val_indices=sel_val_indices,
+            token_subsample_train_idx=token_subsample_train_idx,
+            additional_image_features=additional_image_features,
+            additional_text_features=additional_text_features,
+            sampled_df_alignment=sampled_df_alignment,
+        )
+
+    def fit(
+        self,
+        n_random_subsample_train: Optional[int] = None,
+        n_random_subsample_val: Optional[int] = None,
+        additional_unimodal_data: Optional[Dict[str, list]] = None,
+        n_random_additional_feats: Optional[int] = None,
+        extract_only: bool = False,
+        require_cached: bool = False,
+    ):
+        # Stage-decoupling flags (goal 3.2). require_cached forbids encoder
+        # runs (train/eval stages read cache only); extract_only stops after
+        # feature prep so the extraction stage writes caches without training.
+        # extract_only implies the loads must run encoders, so it never sets
+        # require_cached. Stored on self so the get_*_features wrappers — and
+        # the nested token-bundle loads — pick it up.
+        self._require_cached = require_cached
+
+        prepared = self.prepare_features(
+            n_random_subsample_train=n_random_subsample_train,
+            n_random_subsample_val=n_random_subsample_val,
+            additional_unimodal_data=additional_unimodal_data,
+        )
+
+        # for each sampled (image-layer, text-layer) pair, train the alignment
+        # between the representations (per-pair work lives in _train_layer_pair).
+        print(prepared.sampled_df_alignment)
+        comb_iter = prepared.sampled_df_alignment.iterrows()
         for i_comb, (_, layer_series) in enumerate(comb_iter):
-            layer_comb = layer_series["indices"]
-            image_layer_idx, text_layer_idx = layer_comb
-            layer_comb_score = layer_series["alignment_score"]
-            layer_comb_str = f"img_{image_layer_idx}_txt_{text_layer_idx}"
-
-            # Slice features at the chosen layer. Inputs may be:
-            #  - (N, L, D) legacy multi-layer CLS extraction
-            #  - (N, D)    derived from unified token cache (single-layer CLS)
-            #  - (N, 1)    placeholder when token_level skips the CLS pre-load
-            def _layer_slice(feats, idx):
-                if feats.ndim == 2:
-                    return feats
-                return feats[:, idx, :]
-
-            layer_image_features_train = _layer_slice(
-                image_features_train, image_layer_idx
+            self._train_layer_pair(
+                prepared=prepared,
+                layer_series=layer_series,
+                i_comb=i_comb,
+                n_random_additional_feats=n_random_additional_feats,
+                extract_only=extract_only,
             )
-            layer_text_features_train = _layer_slice(
-                text_features_train, text_layer_idx
-            )
-            layer_image_features_val = _layer_slice(
-                image_features_val, image_layer_idx
-            )
-            layer_text_features_val = _layer_slice(
-                text_features_val, text_layer_idx
-            )
-
-            # Token-level override: replace the (N, D) CLS slices with
-            # (N, T, D) token features for the selected layer, plus masks.
-            token_level = bool(
-                self.config["training"].get("token_level", False)
-            )
-            layer_text_mask_train = None
-            layer_text_mask_val = None
-            if token_level:
-                token_bundle = self._load_token_features_for_layer(
-                    img_layer_idx=image_layer_idx,
-                    txt_layer_idx=text_layer_idx,
-                )
-                layer_image_features_train = token_bundle["img_train"]
-                layer_text_features_train = token_bundle["txt_train"]
-                layer_image_features_val = token_bundle["img_val"]
-                layer_text_features_val = token_bundle["txt_val"]
-                layer_text_mask_train = token_bundle["txt_mask_train"]
-                layer_text_mask_val = token_bundle["txt_mask_val"]
-
-                # Apply drop_duplicates to token features so the token
-                # path matches the CLS path's caption-image dedup
-                # (591K -> 118K for COCO). Each tensor's shape is checked
-                # independently against len(sel_*_indices) — that gates
-                # both the legacy "everything full" case and the new
-                # "image was deduped at extraction" case where the image
-                # tensor is already 118K but text / mask are still 591K.
-                def _apply_if_full(tensor, mask_full, mask_bool):
-                    if (
-                        mask_bool is not None
-                        and tensor is not None
-                        and tensor.shape[0] == mask_full
-                    ):
-                        return tensor[mask_bool]
-                    return tensor
-
-                if sel_train_indices is not None:
-                    full_train_n = len(sel_train_indices)
-                    layer_image_features_train = _apply_if_full(
-                        layer_image_features_train, full_train_n, sel_train_indices
-                    )
-                    layer_text_features_train = _apply_if_full(
-                        layer_text_features_train, full_train_n, sel_train_indices
-                    )
-                    layer_text_mask_train = _apply_if_full(
-                        layer_text_mask_train, full_train_n, sel_train_indices
-                    )
-                if sel_val_indices is not None:
-                    full_val_n = len(sel_val_indices)
-                    layer_image_features_val = _apply_if_full(
-                        layer_image_features_val, full_val_n, sel_val_indices
-                    )
-                    layer_text_features_val = _apply_if_full(
-                        layer_text_features_val, full_val_n, sel_val_indices
-                    )
-                    layer_text_mask_val = _apply_if_full(
-                        layer_text_mask_val, full_val_n, sel_val_indices
-                    )
-
-                # NOTE: in token_level mode the `_load_token_features_for_layer`
-                # helper already applies the ``n_random_subsample_*`` cap at
-                # extraction time (first-N view on the dataloader) to avoid
-                # materialising 100+ GB of full-dataset tokens. The per-tensor
-                # shape check above guards against double-application:
-                #   - subset extraction (`-n{N}` cache) shape != full df ->
-                #     dedup silently skipped (the subset is already sized)
-                #   - dedup-at-extraction image cache is already 118K and
-                #     != full 591K -> dedup silently skipped on image only,
-                #     still applied to the still-full text + mask tensors
-
-                # Apply fit-time subsampling to token features (mirrors
-                # the CLS-level subsampling done earlier in fit()).
-                if token_subsample_train_idx is not None:
-                    n_tok = layer_image_features_train.shape[0]
-                    valid = token_subsample_train_idx[token_subsample_train_idx < n_tok]
-                    if len(valid) < n_tok:
-                        logger.debug(
-                            f"Subsampling token train: {n_tok} -> {len(valid)}"
-                        )
-                        layer_image_features_train = layer_image_features_train[valid]
-                        layer_text_features_train = layer_text_features_train[valid]
-                        if layer_text_mask_train is not None:
-                            layer_text_mask_train = layer_text_mask_train[valid]
-
-                logger.debug(
-                    f"TOKEN TRAIN - img: {tuple(layer_image_features_train.shape)}, "
-                    f"txt: {tuple(layer_text_features_train.shape)}, "
-                    f"txt_mask: {tuple(layer_text_mask_train.shape)}"
-                )
-                logger.debug(
-                    f"TOKEN VAL - img: {tuple(layer_image_features_val.shape)}, "
-                    f"txt: {tuple(layer_text_features_val.shape)}, "
-                    f"txt_mask: {tuple(layer_text_mask_val.shape)}"
-                )
-
-            layer_additional_image_features = None
-            if additional_image_features is not None:
-                layer_additional_image_features = additional_image_features[
-                    :, image_layer_idx, :
-                ]
-
-            layer_additional_text_features = None
-            if additional_text_features is not None:
-                layer_additional_text_features = additional_text_features[
-                    :, text_layer_idx, :
-                ]
-
-            if (
-                len(sampled_df_alignment) == 1
-                or i_comb == len(sampled_df_alignment) - 1
-            ):
-                # clean up the memory if we're only doing one comb or its the last
-                del image_features_train, text_features_train
-                del image_features_val, text_features_val
-                if additional_image_features is not None:
-                    del additional_image_features
-                if additional_text_features is not None:
-                    del additional_text_features
-
-            l_add_img_feats = []
-            for add_img_feat_paths in self.config["features"].get(
-                "add_img_feat_paths", []
-            ):
-                if Path(add_img_feat_paths).exists():
-                    add_img_feats = torch.load(add_img_feat_paths, weights_only=False)[
-                        "image_feats"
-                    ]
-                    l_add_img_feats.append(add_img_feats)
-                    logger.debug(f"Loaded features from: {add_img_feat_paths}")
-            if len(l_add_img_feats) > 1:
-                l_add_img_feats = torch.cat(l_add_img_feats, dim=0)
-
-            l_add_txt_feats = []
-            for add_txt_feat_paths in self.config["features"].get(
-                "add_txt_feat_paths", []
-            ):
-                if Path(add_txt_feat_paths).exists():
-                    add_txt_feats = torch.load(add_txt_feat_paths, weights_only=False)[
-                        "text_feats"
-                    ]
-                    l_add_txt_feats.append(add_txt_feats)
-                    logger.debug(f"Loaded features from: {add_txt_feat_paths}")
-            if len(l_add_txt_feats) > 1:
-                l_add_txt_feats = torch.cat(l_add_txt_feats, dim=0)
-
-            if n_random_additional_feats == 0:
-                del l_add_img_feats, l_add_txt_feats
-            else:
-                if (
-                    n_random_additional_feats is not None
-                    and n_random_additional_feats < l_add_img_feats.shape[0]
-                ):
-                    logger.debug(f"Subsampling LAION to {n_random_additional_feats}")
-                    wandb.run.tags = wandb.run.tags + (
-                        f"LAION subsample {n_random_additional_feats}",
-                    )
-                    random_sequence = torch.randperm(l_add_img_feats.shape[0])[
-                        :n_random_additional_feats
-                    ]
-                    l_add_img_feats = l_add_img_feats[random_sequence]
-                    l_add_txt_feats = l_add_txt_feats[random_sequence]
-                if len(l_add_img_feats) > 1:
-                    layer_image_features_train = torch.cat(
-                        (layer_image_features_train, l_add_img_feats), dim=0
-                    )
-                    logger.debug(
-                        f"New train dim image: {layer_image_features_train.shape}"
-                    )
-                if len(l_add_txt_feats) > 1:
-                    layer_text_features_train = torch.cat(
-                        (layer_text_features_train, l_add_txt_feats), dim=0
-                    )
-                    logger.debug(
-                        f"New train dim text: {layer_text_features_train.shape}"
-                    )
-
-            log_dict = {
-                f"{layer_comb_str}/meta/layer_comb": layer_comb,
-                f"{layer_comb_str}/meta/layer_comb_score": layer_comb_score,
-            }
-            if self.n_random_subsample_train is not None:
-                log_dict["meta/n_random_subsample_train"] = (
-                    self.n_random_subsample_train
-                )
-            if self.n_random_subsample_val is not None:
-                log_dict["meta/n_random_subsample_val"] = self.n_random_subsample_val
-
-            if (
-                self.config["training"]["visualize_original_embeddings"]
-                and not token_level
-            ):
-                # visualize the original embedding space (2D only)
-                fig_emb_image = embedding_plot(
-                    X=layer_image_features_val.float().numpy(),
-                    return_figure=True,
-                )
-                fig_emb_text = embedding_plot(
-                    X=layer_text_features_val.float().numpy(),
-                    return_figure=True,
-                )
-                log_dict[f"{layer_comb_str}/embedding_plot/val_original_emb_image"] = (
-                    wandb.Image(fig_emb_image)
-                )
-                log_dict[f"{layer_comb_str}/embedding_plot/val_original_emb_text"] = (
-                    wandb.Image(fig_emb_text)
-                )
-                plt.close(fig_emb_image)
-                plt.close(fig_emb_text)
-            if self.wandb_logging:
-                wandb.log(log_dict)
-            del log_dict
-
-            if extract_only:
-                # Feature prep for this combo is done — caches are written.
-                # Skip alignment-layer build / train loop / eval. Continue so
-                # every selected layer combo gets its caches materialised.
-                logger.info(
-                    f"extract_only: features ready for layers {layer_comb}; "
-                    "skipping training."
-                )
-                continue
-
-            logger.info(
-                f"Training alignment for layers {layer_comb} (score: {layer_comb_score:.4f})"
-            )
-
-            # Recompute input_dim from the actual features that will be
-            # trained on. The CLS stubs used when token_level=True have
-            # shape (N, 1), so image_dim/text_dim set earlier would be 1
-            # instead of the real embedding dimension.
-            image_dim = layer_image_features_train.shape[-1]
-            text_dim = layer_text_features_train.shape[-1]
-
-            # define the loss function
-            loss_name = self.config["training"].get("clip_loss_name", "CLIPLoss")
-            if loss_name == "SigLipLoss":
-                self.loss = SigLipLoss(
-                    structure_lambda=self.config["training"]["clip_loss"].get("structure_lambda", 0),
-                ).to(self.device)
-            else:
-                self.loss = CLIPLoss(
-                    **self.config["training"]["clip_loss"],
-                ).to(self.device)
-
-            alignment_image = AlignmentFactory.create(
-                self.config["training"]["alignment_layer_name"],
-                input_dim=image_dim,
-                **self.config["training"]["alignment_layer_kwargs"],
-            ).float()
-            alignment_text = AlignmentFactory.create(
-                self.config["training"]["alignment_layer_name"],
-                input_dim=text_dim,
-                **self.config["training"]["alignment_layer_kwargs"],
-            ).float()
-            # Some alignment layers (e.g. FreezeAlignAlignmentLayer) need to
-            # know which modality they serve because they hold both modalities'
-            # components in a single class. Backwards compatible: layers that
-            # don't define set_modality see no change.
-            if hasattr(alignment_image, "set_modality"):
-                alignment_image.set_modality("image")
-            if hasattr(alignment_text, "set_modality"):
-                alignment_text.set_modality("text")
-            if self.config["training"]["wandb_watch"]:
-                wandb.watch(models=[alignment_image, alignment_text], log="all")
-
-            if self.print_model_summary and not token_level:
-                print("*" * 20 + " Alignment Image " + "*" * 20)
-                input_size = (self.train_batch_size,)
-                summary(
-                    alignment_image,
-                    input_size=input_size + (image_dim,),
-                    col_names=["input_size", "output_size", "num_params", "trainable"],
-                )
-                print("*" * 20 + " Alignment Text " + "*" * 20)
-                summary(
-                    alignment_text,
-                    input_size=input_size + (text_dim,),
-                    col_names=["input_size", "output_size", "num_params", "trainable"],
-                )
-            elif self.print_model_summary and token_level:
-                # torchinfo.summary with mask kwarg is awkward; just print parameter counts
-                n_img = sum(p.numel() for p in alignment_image.parameters())
-                n_txt = sum(p.numel() for p in alignment_text.parameters())
-                print(
-                    f"[token_level] alignment_image params={n_img}, "
-                    f"alignment_text params={n_txt}, "
-                    f"img_tokens={tuple(layer_image_features_train.shape)}, "
-                    f"txt_tokens={tuple(layer_text_features_train.shape)}"
-                )
-
-            optimizer_cls = get_optimizer_type(
-                optimizer_name=self.config["training"]["optimizer_name"].lower(),
-            )
-            if self.config["training"].get("use_lr_finder", False):
-                logger.debug("Running learning rate finder...")
-                optimal_lr = self.find_optimal_learning_rate(
-                    image_features_train=layer_image_features_train,
-                    text_features_train=layer_text_features_train,
-                    alignment_image=alignment_image,
-                    alignment_text=alignment_text,
-                    optimizer_cls=optimizer_cls,
-                    wandb_prefix=f"{layer_comb_str}/",
-                    text_mask_train=layer_text_mask_train,
-                    **self.config["training"]["lr_finder"],
-                )
-                logger.debug(f"LR finder complete. Using learning rate: {optimal_lr}")
-                self.config["training"]["learning_rate"] = optimal_lr
-
-            params = list(alignment_image.parameters()) + list(
-                alignment_text.parameters()
-            )
-            if hasattr(self.loss, "logit_scale"):
-                params += list(self.loss.parameters())
-
-            optimizer = optimizer_cls(
-                params=params,
-                lr=self.config["training"]["learning_rate"],
-                **self.config["training"]["optimizer_kwargs"],
-            )
-            if self.config["training"]["scheduler_name"] is None:
-                scheduler = None
-            if self.config["training"]["scheduler_name"] == "WarmupDecayLR":
-                scheduler = WarmupDecayLR(
-                    optimizer,
-                    total_num_steps=self.config["training"]["n_epochs"]
-                    * max(
-                        (len(layer_image_features_train) // self.train_batch_size), 1
-                    ),
-                    **self.config["training"]["scheduler_kwargs"],
-                )
-            elif self.config["training"]["scheduler_name"] == "WarmupLR":
-                scheduler = WarmupLR(
-                    optimizer,
-                    **self.config["training"]["scheduler_kwargs"],
-                )
-            elif self.config["training"]["scheduler_name"] == "CosineAnnealingLR":
-                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                    optimizer=optimizer,
-                    T_max=self.config["training"]["scheduler_epoch_cycles"]
-                    * max(
-                        (len(layer_image_features_train) // self.train_batch_size), 1
-                    ),
-                )
-            else:
-                raise ValueError(
-                    f"Unknown learning rate scheduler: {self.config['training']['scheduler_name']}"
-                )
-
-            if self.config["training"]["early_stopping"]:
-                early_stopping = EarlyStopping(
-                    patience=self.config["training"]["early_stopping_patience"],
-                    log_messages=True,
-                )
-            best_epoch = 0
-            best_val_loss = float("inf")
-            best_weights_alignment_image = copy.deepcopy(alignment_image.state_dict())
-            best_weights_alignment_text = copy.deepcopy(alignment_text.state_dict())
-
-            train_step = 0
-            for epoch in (pbar := trange(self.config["training"]["n_epochs"])):
-                alignment_image = alignment_image.to(self.device)
-                alignment_text = alignment_text.to(self.device)
-
-                steps, train_loss = self.train(
-                    epoch=epoch,
-                    train_step=train_step,
-                    image_features=layer_image_features_train,
-                    text_features=layer_text_features_train,
-                    alignment_image=alignment_image,
-                    alignment_text=alignment_text,
-                    optimizer=optimizer,
-                    scheduler=scheduler,
-                    additional_image_features=layer_additional_image_features,
-                    additional_text_features=layer_additional_text_features,
-                    wandb_prefix=f"{layer_comb_str}/",
-                    text_mask=layer_text_mask_train,
-                )
-                train_step += steps
-
-                with torch.no_grad():
-                    val_loss = self.validate(
-                        epoch=epoch,
-                        train_step=train_step,
-                        image_features=layer_image_features_val,
-                        text_features=layer_text_features_val,
-                        alignment_image=alignment_image,
-                        alignment_text=alignment_text,
-                        wandb_prefix=f"{layer_comb_str}/",
-                        text_mask=layer_text_mask_val,
-                    )
-                pbar.set_description(
-                    f"Train loss: {train_loss:.4f}, Val loss: {val_loss:.4f}"
-                )
-
-                if val_loss < best_val_loss:
-                    best_epoch = epoch
-                    best_val_loss = val_loss
-                    best_weights_alignment_image = copy.deepcopy(
-                        alignment_image.cpu().state_dict()
-                    )
-                    best_weights_alignment_text = copy.deepcopy(
-                        alignment_text.cpu().state_dict()
-                    )
-
-                if self.config["training"]["early_stopping"]:
-                    early_stopping(val_loss)
-                    if early_stopping.early_stop:
-                        break
-
-            if self.config["training"]["early_stopping"]:
-                # load the best model (if using early stopping)
-                alignment_image.load_state_dict(best_weights_alignment_image)
-                alignment_text.load_state_dict(best_weights_alignment_text)
-
-            # save the alignment
-            if self.config["training"]["wandb_watch"]:
-                wandb.unwatch(models=[alignment_image, alignment_text])
-            layer_name = self.config["training"]["alignment_layer_name"]
-            layer_kwargs = self.config["training"]["alignment_layer_kwargs"]
-            save_dict = {
-                "epoch": epoch,
-                "best_epoch": best_epoch,
-                "train_step": train_step,
-                "alignment_text": serialize_alignment_layer(
-                    alignment_text,
-                    class_name=layer_name,
-                    input_dim=text_dim,
-                    kwargs=layer_kwargs,
-                    modality="text",
-                ),
-                "alignment_image": serialize_alignment_layer(
-                    alignment_image,
-                    class_name=layer_name,
-                    input_dim=image_dim,
-                    kwargs=layer_kwargs,
-                    modality="image",
-                ),
-                "optimizer": optimizer.state_dict(),
-                "config": self.config,
-                "loss": self.loss.state_dict(),
-            }
-            save_checkpoint(
-                run_dir=self.save_path
-                / wandb.run.name
-                / f"{layer_comb}_{layer_comb_score:.4f}",
-                save_dict=save_dict,
-                epoch=epoch,
-            )
-
-            # evaluate
-            res_dict = {
-                "layer_comb": layer_comb,
-                "layer_comb_alignment": layer_comb_score,
-                "epoch": epoch,
-                "train_step": train_step,
-                "train_loss": train_loss,
-                "val_loss": val_loss,
-            }
-            with torch.no_grad():
-                self.evaluate_retrieval(
-                    epoch=epoch,
-                    train_step=train_step,
-                    alignment_image=alignment_image,
-                    alignment_text=alignment_text,
-                    alignment_layer_combination=layer_comb,
-                    alignment_layer_combination_str=layer_comb_str,
-                    additional_result_dict=res_dict,
-                )
-                gc.collect()
-                self.evaluate_zero_shot_classification(
-                    epoch=epoch,
-                    train_step=train_step,
-                    alignment_image=alignment_image,
-                    alignment_text=alignment_text,
-                    alignment_layer_combination=layer_comb,
-                    alignment_layer_combination_str=layer_comb_str,
-                    additional_result_dict=res_dict,
-                )
         # first stop the wandb run
         wandb.run.finish()
         wandb.finish()
+
+    def _train_layer_pair(
+        self,
+        prepared: "PreparedFeatures",
+        layer_series,
+        i_comb: int,
+        n_random_additional_feats: Optional[int],
+        extract_only: bool,
+    ):
+        """fit phase D for one (image-layer, text-layer) pair.
+
+        Slice / token-override the features at this combo's layers, build the
+        loss + alignment layers + optimiser, run the epoch loop, then
+        checkpoint and evaluate. Whole-set tensors come from ``prepared``; on
+        the only/last combo they are nulled to release memory before the
+        training loop (mirrors the old in-fit ``del``).
+        """
+        image_features_train = prepared.image_features_train
+        text_features_train = prepared.text_features_train
+        image_features_val = prepared.image_features_val
+        text_features_val = prepared.text_features_val
+        sel_train_indices = prepared.sel_train_indices
+        sel_val_indices = prepared.sel_val_indices
+        token_subsample_train_idx = prepared.token_subsample_train_idx
+        additional_image_features = prepared.additional_image_features
+        additional_text_features = prepared.additional_text_features
+        sampled_df_alignment = prepared.sampled_df_alignment
+        layer_comb = layer_series["indices"]
+        image_layer_idx, text_layer_idx = layer_comb
+        layer_comb_score = layer_series["alignment_score"]
+        layer_comb_str = f"img_{image_layer_idx}_txt_{text_layer_idx}"
+
+        # Slice features at the chosen layer. Inputs may be:
+        #  - (N, L, D) legacy multi-layer CLS extraction
+        #  - (N, D)    derived from unified token cache (single-layer CLS)
+        #  - (N, 1)    placeholder when token_level skips the CLS pre-load
+        def _layer_slice(feats, idx):
+            if feats.ndim == 2:
+                return feats
+            return feats[:, idx, :]
+
+        layer_image_features_train = _layer_slice(
+            image_features_train, image_layer_idx
+        )
+        layer_text_features_train = _layer_slice(
+            text_features_train, text_layer_idx
+        )
+        layer_image_features_val = _layer_slice(
+            image_features_val, image_layer_idx
+        )
+        layer_text_features_val = _layer_slice(
+            text_features_val, text_layer_idx
+        )
+
+        # Token-level override: replace the (N, D) CLS slices with
+        # (N, T, D) token features for the selected layer, plus masks.
+        token_level = bool(
+            self.config["training"].get("token_level", False)
+        )
+        layer_text_mask_train = None
+        layer_text_mask_val = None
+        if token_level:
+            token_bundle = self._load_token_features_for_layer(
+                img_layer_idx=image_layer_idx,
+                txt_layer_idx=text_layer_idx,
+            )
+            layer_image_features_train = token_bundle["img_train"]
+            layer_text_features_train = token_bundle["txt_train"]
+            layer_image_features_val = token_bundle["img_val"]
+            layer_text_features_val = token_bundle["txt_val"]
+            layer_text_mask_train = token_bundle["txt_mask_train"]
+            layer_text_mask_val = token_bundle["txt_mask_val"]
+
+            # Apply drop_duplicates to token features so the token
+            # path matches the CLS path's caption-image dedup
+            # (591K -> 118K for COCO). Each tensor's shape is checked
+            # independently against len(sel_*_indices) — that gates
+            # both the legacy "everything full" case and the new
+            # "image was deduped at extraction" case where the image
+            # tensor is already 118K but text / mask are still 591K.
+            def _apply_if_full(tensor, mask_full, mask_bool):
+                if (
+                    mask_bool is not None
+                    and tensor is not None
+                    and tensor.shape[0] == mask_full
+                ):
+                    return tensor[mask_bool]
+                return tensor
+
+            if sel_train_indices is not None:
+                full_train_n = len(sel_train_indices)
+                layer_image_features_train = _apply_if_full(
+                    layer_image_features_train, full_train_n, sel_train_indices
+                )
+                layer_text_features_train = _apply_if_full(
+                    layer_text_features_train, full_train_n, sel_train_indices
+                )
+                layer_text_mask_train = _apply_if_full(
+                    layer_text_mask_train, full_train_n, sel_train_indices
+                )
+            if sel_val_indices is not None:
+                full_val_n = len(sel_val_indices)
+                layer_image_features_val = _apply_if_full(
+                    layer_image_features_val, full_val_n, sel_val_indices
+                )
+                layer_text_features_val = _apply_if_full(
+                    layer_text_features_val, full_val_n, sel_val_indices
+                )
+                layer_text_mask_val = _apply_if_full(
+                    layer_text_mask_val, full_val_n, sel_val_indices
+                )
+
+            # NOTE: in token_level mode the `_load_token_features_for_layer`
+            # helper already applies the ``n_random_subsample_*`` cap at
+            # extraction time (first-N view on the dataloader) to avoid
+            # materialising 100+ GB of full-dataset tokens. The per-tensor
+            # shape check above guards against double-application:
+            #   - subset extraction (`-n{N}` cache) shape != full df ->
+            #     dedup silently skipped (the subset is already sized)
+            #   - dedup-at-extraction image cache is already 118K and
+            #     != full 591K -> dedup silently skipped on image only,
+            #     still applied to the still-full text + mask tensors
+
+            # Apply fit-time subsampling to token features (mirrors
+            # the CLS-level subsampling done earlier in fit()).
+            if token_subsample_train_idx is not None:
+                n_tok = layer_image_features_train.shape[0]
+                valid = token_subsample_train_idx[token_subsample_train_idx < n_tok]
+                if len(valid) < n_tok:
+                    logger.debug(
+                        f"Subsampling token train: {n_tok} -> {len(valid)}"
+                    )
+                    layer_image_features_train = layer_image_features_train[valid]
+                    layer_text_features_train = layer_text_features_train[valid]
+                    if layer_text_mask_train is not None:
+                        layer_text_mask_train = layer_text_mask_train[valid]
+
+            logger.debug(
+                f"TOKEN TRAIN - img: {tuple(layer_image_features_train.shape)}, "
+                f"txt: {tuple(layer_text_features_train.shape)}, "
+                f"txt_mask: {tuple(layer_text_mask_train.shape)}"
+            )
+            logger.debug(
+                f"TOKEN VAL - img: {tuple(layer_image_features_val.shape)}, "
+                f"txt: {tuple(layer_text_features_val.shape)}, "
+                f"txt_mask: {tuple(layer_text_mask_val.shape)}"
+            )
+
+        layer_additional_image_features = None
+        if additional_image_features is not None:
+            layer_additional_image_features = additional_image_features[
+                :, image_layer_idx, :
+            ]
+
+        layer_additional_text_features = None
+        if additional_text_features is not None:
+            layer_additional_text_features = additional_text_features[
+                :, text_layer_idx, :
+            ]
+
+        if (
+            len(sampled_df_alignment) == 1
+            or i_comb == len(sampled_df_alignment) - 1
+        ):
+            # clean up the memory if we're only doing one comb or its the last.
+            # Null the PreparedFeatures fields too: `prepared` is the sole owner
+            # of these whole-set tensors, so dropping only the local refs would
+            # not actually free them (this method no longer owns them outright).
+            del image_features_train, text_features_train
+            del image_features_val, text_features_val
+            prepared.image_features_train = None
+            prepared.text_features_train = None
+            prepared.image_features_val = None
+            prepared.text_features_val = None
+            if additional_image_features is not None:
+                del additional_image_features
+                prepared.additional_image_features = None
+            if additional_text_features is not None:
+                del additional_text_features
+                prepared.additional_text_features = None
+
+        l_add_img_feats = []
+        for add_img_feat_paths in self.config["features"].get(
+            "add_img_feat_paths", []
+        ):
+            if Path(add_img_feat_paths).exists():
+                add_img_feats = torch.load(add_img_feat_paths, weights_only=False)[
+                    "image_feats"
+                ]
+                l_add_img_feats.append(add_img_feats)
+                logger.debug(f"Loaded features from: {add_img_feat_paths}")
+        if len(l_add_img_feats) > 1:
+            l_add_img_feats = torch.cat(l_add_img_feats, dim=0)
+
+        l_add_txt_feats = []
+        for add_txt_feat_paths in self.config["features"].get(
+            "add_txt_feat_paths", []
+        ):
+            if Path(add_txt_feat_paths).exists():
+                add_txt_feats = torch.load(add_txt_feat_paths, weights_only=False)[
+                    "text_feats"
+                ]
+                l_add_txt_feats.append(add_txt_feats)
+                logger.debug(f"Loaded features from: {add_txt_feat_paths}")
+        if len(l_add_txt_feats) > 1:
+            l_add_txt_feats = torch.cat(l_add_txt_feats, dim=0)
+
+        if n_random_additional_feats == 0:
+            del l_add_img_feats, l_add_txt_feats
+        else:
+            if (
+                n_random_additional_feats is not None
+                and n_random_additional_feats < l_add_img_feats.shape[0]
+            ):
+                logger.debug(f"Subsampling LAION to {n_random_additional_feats}")
+                wandb.run.tags = wandb.run.tags + (
+                    f"LAION subsample {n_random_additional_feats}",
+                )
+                random_sequence = torch.randperm(l_add_img_feats.shape[0])[
+                    :n_random_additional_feats
+                ]
+                l_add_img_feats = l_add_img_feats[random_sequence]
+                l_add_txt_feats = l_add_txt_feats[random_sequence]
+            if len(l_add_img_feats) > 1:
+                layer_image_features_train = torch.cat(
+                    (layer_image_features_train, l_add_img_feats), dim=0
+                )
+                logger.debug(
+                    f"New train dim image: {layer_image_features_train.shape}"
+                )
+            if len(l_add_txt_feats) > 1:
+                layer_text_features_train = torch.cat(
+                    (layer_text_features_train, l_add_txt_feats), dim=0
+                )
+                logger.debug(
+                    f"New train dim text: {layer_text_features_train.shape}"
+                )
+
+        log_dict = {
+            f"{layer_comb_str}/meta/layer_comb": layer_comb,
+            f"{layer_comb_str}/meta/layer_comb_score": layer_comb_score,
+        }
+        if self.n_random_subsample_train is not None:
+            log_dict["meta/n_random_subsample_train"] = (
+                self.n_random_subsample_train
+            )
+        if self.n_random_subsample_val is not None:
+            log_dict["meta/n_random_subsample_val"] = self.n_random_subsample_val
+
+        if (
+            self.config["training"]["visualize_original_embeddings"]
+            and not token_level
+        ):
+            # visualize the original embedding space (2D only)
+            fig_emb_image = embedding_plot(
+                X=layer_image_features_val.float().numpy(),
+                return_figure=True,
+            )
+            fig_emb_text = embedding_plot(
+                X=layer_text_features_val.float().numpy(),
+                return_figure=True,
+            )
+            log_dict[f"{layer_comb_str}/embedding_plot/val_original_emb_image"] = (
+                wandb.Image(fig_emb_image)
+            )
+            log_dict[f"{layer_comb_str}/embedding_plot/val_original_emb_text"] = (
+                wandb.Image(fig_emb_text)
+            )
+            plt.close(fig_emb_image)
+            plt.close(fig_emb_text)
+        if self.wandb_logging:
+            wandb.log(log_dict)
+        del log_dict
+
+        if extract_only:
+            # Feature prep for this combo is done — caches are written. Skip
+            # alignment-layer build / train loop / eval and return so the fit()
+            # loop advances to the next combo (each combo's caches still get
+            # materialised).
+            logger.info(
+                f"extract_only: features ready for layers {layer_comb}; "
+                "skipping training."
+            )
+            return
+
+        logger.info(
+            f"Training alignment for layers {layer_comb} (score: {layer_comb_score:.4f})"
+        )
+
+        # Recompute input_dim from the actual features that will be
+        # trained on. The CLS stubs used when token_level=True have
+        # shape (N, 1), so image_dim/text_dim set earlier would be 1
+        # instead of the real embedding dimension.
+        image_dim = layer_image_features_train.shape[-1]
+        text_dim = layer_text_features_train.shape[-1]
+
+        # define the loss function
+        loss_name = self.config["training"].get("clip_loss_name", "CLIPLoss")
+        if loss_name == "SigLipLoss":
+            self.loss = SigLipLoss(
+                structure_lambda=self.config["training"]["clip_loss"].get("structure_lambda", 0),
+            ).to(self.device)
+        else:
+            self.loss = CLIPLoss(
+                **self.config["training"]["clip_loss"],
+            ).to(self.device)
+
+        alignment_image = AlignmentFactory.create(
+            self.config["training"]["alignment_layer_name"],
+            input_dim=image_dim,
+            **self.config["training"]["alignment_layer_kwargs"],
+        ).float()
+        alignment_text = AlignmentFactory.create(
+            self.config["training"]["alignment_layer_name"],
+            input_dim=text_dim,
+            **self.config["training"]["alignment_layer_kwargs"],
+        ).float()
+        # Some alignment layers (e.g. FreezeAlignAlignmentLayer) need to
+        # know which modality they serve because they hold both modalities'
+        # components in a single class. Backwards compatible: layers that
+        # don't define set_modality see no change.
+        if hasattr(alignment_image, "set_modality"):
+            alignment_image.set_modality("image")
+        if hasattr(alignment_text, "set_modality"):
+            alignment_text.set_modality("text")
+        if self.config["training"]["wandb_watch"]:
+            wandb.watch(models=[alignment_image, alignment_text], log="all")
+
+        if self.print_model_summary and not token_level:
+            print("*" * 20 + " Alignment Image " + "*" * 20)
+            input_size = (self.train_batch_size,)
+            summary(
+                alignment_image,
+                input_size=input_size + (image_dim,),
+                col_names=["input_size", "output_size", "num_params", "trainable"],
+            )
+            print("*" * 20 + " Alignment Text " + "*" * 20)
+            summary(
+                alignment_text,
+                input_size=input_size + (text_dim,),
+                col_names=["input_size", "output_size", "num_params", "trainable"],
+            )
+        elif self.print_model_summary and token_level:
+            # torchinfo.summary with mask kwarg is awkward; just print parameter counts
+            n_img = sum(p.numel() for p in alignment_image.parameters())
+            n_txt = sum(p.numel() for p in alignment_text.parameters())
+            print(
+                f"[token_level] alignment_image params={n_img}, "
+                f"alignment_text params={n_txt}, "
+                f"img_tokens={tuple(layer_image_features_train.shape)}, "
+                f"txt_tokens={tuple(layer_text_features_train.shape)}"
+            )
+
+        optimizer_cls = get_optimizer_type(
+            optimizer_name=self.config["training"]["optimizer_name"].lower(),
+        )
+        if self.config["training"].get("use_lr_finder", False):
+            logger.debug("Running learning rate finder...")
+            optimal_lr = self.find_optimal_learning_rate(
+                image_features_train=layer_image_features_train,
+                text_features_train=layer_text_features_train,
+                alignment_image=alignment_image,
+                alignment_text=alignment_text,
+                optimizer_cls=optimizer_cls,
+                wandb_prefix=f"{layer_comb_str}/",
+                text_mask_train=layer_text_mask_train,
+                **self.config["training"]["lr_finder"],
+            )
+            logger.debug(f"LR finder complete. Using learning rate: {optimal_lr}")
+            self.config["training"]["learning_rate"] = optimal_lr
+
+        params = list(alignment_image.parameters()) + list(
+            alignment_text.parameters()
+        )
+        if hasattr(self.loss, "logit_scale"):
+            params += list(self.loss.parameters())
+
+        optimizer = optimizer_cls(
+            params=params,
+            lr=self.config["training"]["learning_rate"],
+            **self.config["training"]["optimizer_kwargs"],
+        )
+        if self.config["training"]["scheduler_name"] is None:
+            scheduler = None
+        if self.config["training"]["scheduler_name"] == "WarmupDecayLR":
+            scheduler = WarmupDecayLR(
+                optimizer,
+                total_num_steps=self.config["training"]["n_epochs"]
+                * max(
+                    (len(layer_image_features_train) // self.train_batch_size), 1
+                ),
+                **self.config["training"]["scheduler_kwargs"],
+            )
+        elif self.config["training"]["scheduler_name"] == "WarmupLR":
+            scheduler = WarmupLR(
+                optimizer,
+                **self.config["training"]["scheduler_kwargs"],
+            )
+        elif self.config["training"]["scheduler_name"] == "CosineAnnealingLR":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer=optimizer,
+                T_max=self.config["training"]["scheduler_epoch_cycles"]
+                * max(
+                    (len(layer_image_features_train) // self.train_batch_size), 1
+                ),
+            )
+        else:
+            raise ValueError(
+                f"Unknown learning rate scheduler: {self.config['training']['scheduler_name']}"
+            )
+
+        if self.config["training"]["early_stopping"]:
+            early_stopping = EarlyStopping(
+                patience=self.config["training"]["early_stopping_patience"],
+                log_messages=True,
+            )
+        best_epoch = 0
+        best_val_loss = float("inf")
+        best_weights_alignment_image = copy.deepcopy(alignment_image.state_dict())
+        best_weights_alignment_text = copy.deepcopy(alignment_text.state_dict())
+
+        train_step = 0
+        for epoch in (pbar := trange(self.config["training"]["n_epochs"])):
+            alignment_image = alignment_image.to(self.device)
+            alignment_text = alignment_text.to(self.device)
+
+            steps, train_loss = self.train(
+                epoch=epoch,
+                train_step=train_step,
+                image_features=layer_image_features_train,
+                text_features=layer_text_features_train,
+                alignment_image=alignment_image,
+                alignment_text=alignment_text,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                additional_image_features=layer_additional_image_features,
+                additional_text_features=layer_additional_text_features,
+                wandb_prefix=f"{layer_comb_str}/",
+                text_mask=layer_text_mask_train,
+            )
+            train_step += steps
+
+            with torch.no_grad():
+                val_loss = self.validate(
+                    epoch=epoch,
+                    train_step=train_step,
+                    image_features=layer_image_features_val,
+                    text_features=layer_text_features_val,
+                    alignment_image=alignment_image,
+                    alignment_text=alignment_text,
+                    wandb_prefix=f"{layer_comb_str}/",
+                    text_mask=layer_text_mask_val,
+                )
+            pbar.set_description(
+                f"Train loss: {train_loss:.4f}, Val loss: {val_loss:.4f}"
+            )
+
+            if val_loss < best_val_loss:
+                best_epoch = epoch
+                best_val_loss = val_loss
+                best_weights_alignment_image = copy.deepcopy(
+                    alignment_image.cpu().state_dict()
+                )
+                best_weights_alignment_text = copy.deepcopy(
+                    alignment_text.cpu().state_dict()
+                )
+
+            if self.config["training"]["early_stopping"]:
+                early_stopping(val_loss)
+                if early_stopping.early_stop:
+                    break
+
+        if self.config["training"]["early_stopping"]:
+            # load the best model (if using early stopping)
+            alignment_image.load_state_dict(best_weights_alignment_image)
+            alignment_text.load_state_dict(best_weights_alignment_text)
+
+        # save the alignment
+        if self.config["training"]["wandb_watch"]:
+            wandb.unwatch(models=[alignment_image, alignment_text])
+        layer_name = self.config["training"]["alignment_layer_name"]
+        layer_kwargs = self.config["training"]["alignment_layer_kwargs"]
+        save_dict = {
+            "epoch": epoch,
+            "best_epoch": best_epoch,
+            "train_step": train_step,
+            "alignment_text": serialize_alignment_layer(
+                alignment_text,
+                class_name=layer_name,
+                input_dim=text_dim,
+                kwargs=layer_kwargs,
+                modality="text",
+            ),
+            "alignment_image": serialize_alignment_layer(
+                alignment_image,
+                class_name=layer_name,
+                input_dim=image_dim,
+                kwargs=layer_kwargs,
+                modality="image",
+            ),
+            "optimizer": optimizer.state_dict(),
+            "config": self.config,
+            "loss": self.loss.state_dict(),
+        }
+        save_checkpoint(
+            run_dir=self.save_path
+            / wandb.run.name
+            / f"{layer_comb}_{layer_comb_score:.4f}",
+            save_dict=save_dict,
+            epoch=epoch,
+        )
+
+        # evaluate
+        res_dict = {
+            "layer_comb": layer_comb,
+            "layer_comb_alignment": layer_comb_score,
+            "epoch": epoch,
+            "train_step": train_step,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+        }
+        with torch.no_grad():
+            self.evaluate_retrieval(
+                epoch=epoch,
+                train_step=train_step,
+                alignment_image=alignment_image,
+                alignment_text=alignment_text,
+                alignment_layer_combination=layer_comb,
+                alignment_layer_combination_str=layer_comb_str,
+                additional_result_dict=res_dict,
+            )
+            gc.collect()
+            self.evaluate_zero_shot_classification(
+                epoch=epoch,
+                train_step=train_step,
+                alignment_image=alignment_image,
+                alignment_text=alignment_text,
+                alignment_layer_combination=layer_comb,
+                alignment_layer_combination_str=layer_comb_str,
+                additional_result_dict=res_dict,
+            )
+
 
     def train(
         self,

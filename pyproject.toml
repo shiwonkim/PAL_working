@@ -8,16 +8,6 @@ authors = [
     { name = "Maria Brbic", email = "mbrbic@epfl.ch" },
 ]
 
-[tool.black]
-include = '\.pyi?$'
-
-[tool.isort]
-profile = "black"
-skip_gitignore=true
-py_version=39
-default_section = "THIRDPARTY"
-known_thirdparty=["wandb"]
-
 [tool.pytest.ini_options]
 # Set true to see logger ouput in test command line window
 log_cli = false

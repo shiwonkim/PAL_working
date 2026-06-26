@@ -15,7 +15,6 @@ import torch
 import torch.nn.functional as F
 import torchmetrics
 import wandb
-from deepspeed.runtime.lr_schedules import WarmupDecayLR, WarmupLR
 from loguru import logger
 from torch.utils.data import DataLoader
 from torchinfo import summary
@@ -1421,20 +1420,6 @@ class AlignmentTrainer(Trainer):
         )
         if self.config["training"]["scheduler_name"] is None:
             scheduler = None
-        if self.config["training"]["scheduler_name"] == "WarmupDecayLR":
-            scheduler = WarmupDecayLR(
-                optimizer,
-                total_num_steps=self.config["training"]["n_epochs"]
-                * max(
-                    (len(layer_image_features_train) // self.train_batch_size), 1
-                ),
-                **self.config["training"]["scheduler_kwargs"],
-            )
-        elif self.config["training"]["scheduler_name"] == "WarmupLR":
-            scheduler = WarmupLR(
-                optimizer,
-                **self.config["training"]["scheduler_kwargs"],
-            )
         elif self.config["training"]["scheduler_name"] == "CosineAnnealingLR":
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer=optimizer,

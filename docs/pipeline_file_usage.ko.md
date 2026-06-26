@@ -57,8 +57,8 @@ import된 모듈을 `sys.modules`에서 캡처(동적 ground truth):
 | `src/loss/clip_loss.py`, `siglip_loss.py` | train | CLIP / SigLip 손실 |
 | `src/evaluation/retrieval.py` | eval | retrieval 메트릭 |
 | `src/evaluation/zero_shot_classifier.py`, `consts.py` | eval | zero-shot 분류기 / 템플릿 |
-| `src/measure_alignment.py` | train | layer selection 점수 (`compute_score`, mutual_knn) |
-| `src/models/text/models.py`, `src/models/tasks.py` | extract | LLM 로더 등 |
+| `src/measure_alignment.py` | train | layer selection 점수 (`compute_score`, mutual_knn) — 이 함수만 남기고 정리됨 |
+| `src/models/text/models.py` | extract | LLM 로더 (`load_llm` / `load_tokenizer`) |
 
 ### 대안 trainer (config 분기, extract/train 경로에서만 import)
 | 파일 | 비고 |
@@ -69,21 +69,28 @@ import된 모듈을 `sys.modules`에서 캡처(동적 ground truth):
 | 파일 |
 |---|
 | `src/dataset_preparation/data_utils.py` (get_datasets / transforms) |
-| `src/utils/`: `utils.py`, `metrics.py`, `alignment_utils.py`, `base_factory.py`, `load_modules.py` |
+| `src/utils/`: `utils.py`, `metrics.py`, `base_factory.py`, `load_modules.py` |
 | `src/core/src/datasets/`: `coco_dataset.py`, `flickr30k_dataset.py`, `image_text_dataset.py`, `base_dataset.py` |
 | `src/core/src/optimizers/`: `lars.py`, `utils.py` · `src/core/src/utils/`: `loader.py`, `plotting.py`, `utils.py` |
 
 ---
 
-## ❌ 이 파이프라인에서 사용 안 되는 파일 (19개)
+## ❌ 이 파이프라인에서 사용 안 되는 파일
 
 | 분류 | 파일 | 실제 성격 |
 |---|---|---|
 | **데이터셋 준비 스크립트** (일회성, 파이프라인 외) | `dataset_preparation/prepare_{aircraft,birdsnap,clevr,k700,kitti,memes,pets,resisc45,ucf101}.py`, `vissl_download.py` | 각 다운스트림 데이터셋 일회성 전처리. 평가 데이터 만들 때 손으로 실행 |
 | **별도 eval 진입점** (segmentation — 다른 작업) | `evaluation/zero_shot_segmentation.py`, `zero_shot_patch_voting.py` | `scripts/batch2_eval/run_segmentation.sh`가 쓰는 세그멘테이션 평가. retrieval/zero-shot과 별개 |
-| **레거시 / 대체된 추출기** | `extract_features.py`, `extract_token_features.py` | 구버전 단독 추출기. 현재는 `extract.py`(= `prepare_features`)가 대체. 문서엔 아직 언급됨 |
 | **별도 학습 진입점** | `train_subset.py` | 서브셋 학습용 독립 스크립트 |
 | **죽은 유틸** | `src/utils/paths.py` | 어디서도 import 안 됨 (정적·동적 모두) |
+
+### 2026-06-26 삭제됨 (Platonic 벤치마크 레거시, PAL은 안 씀)
+`extract_features.py`, `extract_token_features.py`, `src/utils/alignment_utils.py`,
+`src/models/tasks.py` 삭제 + `src/measure_alignment.py`를 `compute_score`만 남기고
+정리. 이들은 다중 모델 "Platonic Representation" 추출 + 정렬 벤치마크 경로(`get_models`
+model zoo, ViT+conv)로, PAL의 단일 인코더쌍 워크플로가 한 번도 안 씀.
+`extract_token_features.py`는 `extract.py`(= `prepare_features`)로 대체된 얇은 래퍼.
+실사용되는 `compute_score`(layer selection)는 유지.
 
 ---
 

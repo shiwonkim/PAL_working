@@ -60,8 +60,8 @@ are listed as USED by definition.
 | `src/loss/clip_loss.py`, `siglip_loss.py` | train | CLIP / SigLip loss |
 | `src/evaluation/retrieval.py` | eval | retrieval metrics |
 | `src/evaluation/zero_shot_classifier.py`, `consts.py` | eval | zero-shot classifier / templates |
-| `src/measure_alignment.py` | train | layer-selection score (`compute_score`, mutual_knn) |
-| `src/models/text/models.py`, `src/models/tasks.py` | extract | LLM loader etc. |
+| `src/measure_alignment.py` | train | layer-selection score (`compute_score`, mutual_knn) — trimmed to that one function |
+| `src/models/text/models.py` | extract | LLM loader (`load_llm` / `load_tokenizer`) |
 
 ### Alternative trainers (config branch; imported on the extract/train path only)
 | File | Note |
@@ -72,21 +72,29 @@ are listed as USED by definition.
 | File |
 |---|
 | `src/dataset_preparation/data_utils.py` (get_datasets / transforms) |
-| `src/utils/`: `utils.py`, `metrics.py`, `alignment_utils.py`, `base_factory.py`, `load_modules.py` |
+| `src/utils/`: `utils.py`, `metrics.py`, `base_factory.py`, `load_modules.py` |
 | `src/core/src/datasets/`: `coco_dataset.py`, `flickr30k_dataset.py`, `image_text_dataset.py`, `base_dataset.py` |
 | `src/core/src/optimizers/`: `lars.py`, `utils.py` · `src/core/src/utils/`: `loader.py`, `plotting.py`, `utils.py` |
 
 ---
 
-## ❌ Not used by this pipeline (19)
+## ❌ Not used by this pipeline
 
 | Class | Files | Actual nature |
 |---|---|---|
 | **Dataset-prep scripts** (one-off, outside the pipeline) | `dataset_preparation/prepare_{aircraft,birdsnap,clevr,k700,kitti,memes,pets,resisc45,ucf101}.py`, `vissl_download.py` | one-off per-downstream-dataset preprocessing, run by hand when building eval data |
 | **Separate eval entry points** (segmentation — a different task) | `evaluation/zero_shot_segmentation.py`, `zero_shot_patch_voting.py` | segmentation eval used by `scripts/batch2_eval/run_segmentation.sh`, separate from retrieval/zero-shot |
-| **Legacy / superseded extractors** | `extract_features.py`, `extract_token_features.py` | old standalone extractors; now superseded by `extract.py` (= `prepare_features`). Still referenced in docs |
 | **Separate training entry point** | `train_subset.py` | standalone subset-training script |
 | **Dead util** | `src/utils/paths.py` | imported nowhere (static and dynamic) |
+
+### Deleted 2026-06-26 (Platonic-benchmark legacy, never used by PAL)
+`extract_features.py`, `extract_token_features.py`, `src/utils/alignment_utils.py`,
+`src/models/tasks.py` were removed, and `src/measure_alignment.py` trimmed to
+`compute_score`. They were the multi-model "Platonic Representation" extraction +
+alignment-benchmark path (model zoo via `get_models`, ViT+conv), which the PAL
+single-encoder-pair workflow never ran. `extract_token_features.py` was a thin
+wrapper superseded by `extract.py` (= `prepare_features`). The live
+`compute_score` (layer selection) is retained.
 
 ---
 

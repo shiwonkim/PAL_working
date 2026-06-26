@@ -618,9 +618,13 @@ class AlignmentTrainer(Trainer):
         )
         if not path.exists():
             return None
-        payload = torch.load(path, weights_only=False)
+        # mmap=True: the unified token cache is large (ViT-L COCO train is ~44
+        # GB); memory-map it so deriving the CLS slice pages in only the rows it
+        # touches instead of loading the whole tensor into committed RAM.
+        payload = torch.load(path, weights_only=False, mmap=True)
         feats = payload["features"]
         # tokens[:, 0, :] is the CLS token under DINOv2's standard layout.
+        # .contiguous() materialises just the (N, D) CLS slice off the mmap.
         cls = feats[:, 0, :].contiguous()
         logger.debug(
             f"Derived CLS from unified token cache: {path} "
@@ -637,8 +641,11 @@ class AlignmentTrainer(Trainer):
         )
         if not (feats_path.exists() and mask_path.exists()):
             return None
-        feats = torch.load(feats_path, weights_only=False)["features"]
-        mask = torch.load(mask_path, weights_only=False)["mask"]
+        # mmap=True: see _try_load_image_cls_from_tokens. The masked-mean reduces
+        # the sequence axis, so the result is (N, D) regardless; mmap keeps the
+        # full (N, T, D) token tensor off committed RAM while it is reduced.
+        feats = torch.load(feats_path, weights_only=False, mmap=True)["features"]
+        mask = torch.load(mask_path, weights_only=False, mmap=True)["mask"]
         # masked mean over the sequence axis: (feats * mask).sum(1) / mask.sum(1)
         m = mask.to(dtype=feats.dtype).unsqueeze(-1)
         denom = m.sum(dim=1).clamp(min=1)

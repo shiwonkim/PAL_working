@@ -59,15 +59,19 @@ class PreparedFeatures:
     """Output of ``AlignmentTrainer.prepare_features`` (fit phases A+B+C).
 
     Holds the post-dedup / post-subsample whole-set feature tensors plus the
-    selection bookkeeping the per-combo training loop needs. Mutable on
-    purpose: the combo loop nulls the heavy whole-set tensors mid-iteration to
+    selection bookkeeping the per-pair training loop needs. Mutable on
+    purpose: the loop nulls the heavy whole-set tensors mid-iteration to
     release memory before training (mirrors the old in-fit ``del``).
+
+    The feature tensors are ``None`` in token mode: there ``prepare_features``
+    skips the CLS pre-load and the real (N, T, D) tokens are loaded per layer
+    pair in ``_train_layer_pair``.
     """
 
-    image_features_train: torch.Tensor
-    text_features_train: torch.Tensor
-    image_features_val: torch.Tensor
-    text_features_val: torch.Tensor
+    image_features_train: Optional[torch.Tensor]
+    text_features_train: Optional[torch.Tensor]
+    image_features_val: Optional[torch.Tensor]
+    text_features_val: Optional[torch.Tensor]
     sel_train_indices: object
     sel_val_indices: object
     token_subsample_train_idx: Optional[torch.Tensor]
@@ -714,12 +718,11 @@ class AlignmentTrainer(Trainer):
                     image_features_val = derived
             if image_features_val is None:
                 if token_level_cfg and cfg_layer_img is not None:
-                    # Skip: tokens will be loaded later. Use a tiny stub
-                    # that satisfies shape/dim checks without extraction.
-                    image_features_val = torch.zeros(
-                        (len(self.val_dataset.dataset), 1),
-                        dtype=torch.float32,
-                    )
+                    # Token mode: the real (N, T, D) tokens for the chosen layer
+                    # are loaded later in _train_layer_pair. Skip the CLS
+                    # pre-load entirely — None flows through the (count-based)
+                    # dedup / subsample below and the per-pair loop fills it in.
+                    image_features_val = None
                 else:
                     image_features_val = self.get_image_features(
                         loader=self.val_dataset,
@@ -748,10 +751,8 @@ class AlignmentTrainer(Trainer):
                     text_features_val = derived
             if text_features_val is None:
                 if token_level_cfg and cfg_layer_txt is not None:
-                    text_features_val = torch.zeros(
-                        (len(self.val_dataset.dataset), 1),
-                        dtype=torch.float32,
-                    )
+                    # Token mode: real tokens loaded later in _train_layer_pair.
+                    text_features_val = None
                 else:
                     text_features_val = self.get_text_features(
                         loader=self.val_dataset,
@@ -773,10 +774,8 @@ class AlignmentTrainer(Trainer):
                     image_features_train = derived
             if image_features_train is None:
                 if token_level_cfg and cfg_layer_img is not None:
-                    image_features_train = torch.zeros(
-                        (len(self.train_dataset.dataset), 1),
-                        dtype=torch.float32,
-                    )
+                    # Token mode: real tokens loaded later in _train_layer_pair.
+                    image_features_train = None
                 else:
                     image_features_train = self.get_image_features(
                         loader=self.train_dataset,
@@ -798,10 +797,8 @@ class AlignmentTrainer(Trainer):
                     text_features_train = derived
             if text_features_train is None:
                 if token_level_cfg and cfg_layer_txt is not None:
-                    text_features_train = torch.zeros(
-                        (len(self.train_dataset.dataset), 1),
-                        dtype=torch.float32,
-                    )
+                    # Token mode: real tokens loaded later in _train_layer_pair.
+                    text_features_train = None
                 else:
                     text_features_train = self.get_text_features(
                         loader=self.train_dataset,
@@ -810,8 +807,6 @@ class AlignmentTrainer(Trainer):
                     )
         else:
             text_features_train = self.text_features_train
-        image_dim = image_features_train.shape[-1]
-        text_dim = text_features_train.shape[-1]
 
         # cache features if wanted
         self.image_features_val = image_features_val
@@ -874,9 +869,33 @@ class AlignmentTrainer(Trainer):
 
         # check that we have the same samples — assertion AFTER dedup so
         # the deduped-image-extraction case (118K vs 591K pre-dedup) is
-        # handled correctly.
-        assert image_features_train.shape[0] == text_features_train.shape[0]
-        assert image_features_val.shape[0] == text_features_val.shape[0]
+        # handled correctly. Skipped in token mode where features are None
+        # (the real tokens are size-checked in _train_layer_pair instead).
+        if image_features_train is not None and text_features_train is not None:
+            assert image_features_train.shape[0] == text_features_train.shape[0]
+        if image_features_val is not None and text_features_val is not None:
+            assert image_features_val.shape[0] == text_features_val.shape[0]
+
+        # Post-dedup row count per split. In token mode the features are None
+        # (no CLS stub), so derive the count the way the old stub would have
+        # ended up: full dataset length, reduced by the dedup mask when it
+        # applies (mirrors _apply_if_full's shape==full_n guard). Keeping the
+        # torch.randperm(n) calls below identical in count + order preserves
+        # the global RNG stream the alignment-layer init depends on.
+        def _post_dedup_rows(feats, sel, loader):
+            if feats is not None:
+                return feats.shape[0]
+            n_full = len(loader.dataset)
+            if sel is not None and len(sel) == n_full:
+                return int(sel.values.sum())
+            return n_full
+
+        n_train_rows = _post_dedup_rows(
+            image_features_train, sel_train_indices, self.train_dataset
+        )
+        n_val_rows = _post_dedup_rows(
+            image_features_val, sel_val_indices, self.val_dataset
+        )
 
         # remember the subsample permutations so token-level loading can
         # replay them on the fresh token tensors
@@ -884,7 +903,7 @@ class AlignmentTrainer(Trainer):
         token_subsample_val_idx = None
         if (
             n_random_subsample_train is not None
-            and n_random_subsample_train < image_features_train.shape[0]
+            and n_random_subsample_train < n_train_rows
         ):
             logger.debug(f"Subsampling train set to {n_random_subsample_train}")
             self.n_random_subsample_train = n_random_subsample_train
@@ -892,15 +911,16 @@ class AlignmentTrainer(Trainer):
                 f"TRAIN subsample {n_random_subsample_train}",
             )
 
-            random_sequence = torch.randperm(image_features_train.shape[0])[
+            random_sequence = torch.randperm(n_train_rows)[
                 :n_random_subsample_train
             ]
-            image_features_train = image_features_train[random_sequence]
-            text_features_train = text_features_train[random_sequence]
+            if image_features_train is not None:
+                image_features_train = image_features_train[random_sequence]
+                text_features_train = text_features_train[random_sequence]
             token_subsample_train_idx = random_sequence
         if (
             n_random_subsample_val is not None
-            and n_random_subsample_val < image_features_val.shape[0]
+            and n_random_subsample_val < n_val_rows
         ):
             logger.debug(f"Subsampling validation set to {n_random_subsample_val}")
             self.n_random_subsample_val = n_random_subsample_val
@@ -908,19 +928,23 @@ class AlignmentTrainer(Trainer):
                 f"VAL subsample {n_random_subsample_val}",
             )
 
-            random_sequence = torch.randperm(image_features_val.shape[0])[
+            random_sequence = torch.randperm(n_val_rows)[
                 :n_random_subsample_val
             ]
-            image_features_val = image_features_val[random_sequence]
-            text_features_val = text_features_val[random_sequence]
+            if image_features_val is not None:
+                image_features_val = image_features_val[random_sequence]
+                text_features_val = text_features_val[random_sequence]
             token_subsample_val_idx = random_sequence
 
-        logger.debug(
-            f"TRAIN - img: {image_features_train.shape}, txt: {text_features_train.shape}"
-        )
-        logger.debug(
-            f"VAL - img: {image_features_val.shape}, txt: {text_features_val.shape}"
-        )
+        if image_features_train is not None:
+            logger.debug(
+                f"TRAIN - img: {image_features_train.shape}, "
+                f"txt: {text_features_train.shape}"
+            )
+            logger.debug(
+                f"VAL - img: {image_features_val.shape}, "
+                f"txt: {text_features_val.shape}"
+            )
 
         # additional unimodal data
         additional_image_features = None
@@ -1062,6 +1086,10 @@ class AlignmentTrainer(Trainer):
         #  - (N, D)    derived from unified token cache (single-layer CLS)
         #  - (N, 1)    placeholder when token_level skips the CLS pre-load
         def _layer_slice(feats, idx):
+            if feats is None:
+                # token mode: prepare_features no longer builds a CLS stub;
+                # the real (N, T, D) tokens replace this in the token branch.
+                return None
             if feats.ndim == 2:
                 return feats
             return feats[:, idx, :]

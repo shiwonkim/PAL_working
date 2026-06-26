@@ -41,12 +41,22 @@ feature caches, checkpoints, and the frozen, revision-ready code.
    pickled-module checkpoints to a self-describing state_dict format.
 2. **Rename classes to PAL** ✅ *done* — `BridgeAnchor*` → `PAL*`, `configs/ba` →
    `configs/pal`, with runtime class-name checks and checkpoint `class_name` strings updated.
-3. **Extract a FeatureStore** abstraction — cache load / mmap / dedup are currently
-   inlined in `AlignmentTrainer.fit()`; this is also the right home for the LAION memory
-   reimplementation (virtual-concat + mmap + buffer-shuffle + prefetch).
-4. **Consolidate the CLS ↔ Token branching** duplicated across extraction / fit / eval.
-5. **Split the oversized `AlignmentTrainer`** (~2900 lines, `fit()` ~800) into focused
-   responsibilities.
+3. **Extract a FeatureStore** abstraction ✅ *core done; LAION (3.3) deferred* —
+   `src/utils/feature_store.py` owns cache path building, extract-or-load (mmap), encoder
+   builders, text-mask I/O, and image-dedup; `FeatureSpec.cache_suffix` centralises suffix
+   construction. Stage decoupling (extract → train → eval) via `require_cached` + the thin
+   CLIs `src/{extract,train}.py` + `scripts/run_pipeline.sh`. **Remaining: 3.3 LAION memory
+   reimplementation** (virtual-concat + mmap + buffer-shuffle + prefetch) — see
+   `docs/laion_reimplementation_TODO.md`; deferred on the `serverB` branch.
+4. **Consolidate the CLS ↔ Token branching** ✅ *done* — `token_level` stays a config flag
+   (not derivable from the layer class); its propagation is centralised in
+   `src/utils/feature_spec.py` (`FeatureSpec`), and the CLS/token PAL layers are merged into one
+   `PALAlignmentLayer` that picks the path by input rank.
+5. **Split the oversized `AlignmentTrainer`** ✅ *done* — `fit()` (~840 lines) split into
+   `prepare_features` (eager: load / dedup / subsample / layer-select / slice or token-load one
+   layer pair → `PreparedFeatures`) and `_train_layer_pair` (build + train + checkpoint + eval),
+   with `fit()` a thin orchestrator. Single layer pair only (multi-pair sweeps raise); extraction
+   is `prepare_features` with no training.
 
 Already done upstream: `cls_attn_prior` (an unused, never-enabled feature) removed from
 the PAL-token layer and the trainer.

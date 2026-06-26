@@ -58,26 +58,28 @@ from src.utils.utils import (
 class PreparedFeatures:
     """Output of ``AlignmentTrainer.prepare_features`` (fit phases A+B+C).
 
-    Holds the post-dedup / post-subsample whole-set feature tensors plus the
-    selection bookkeeping the per-pair training loop needs. Mutable on
-    purpose: the loop nulls the heavy whole-set tensors mid-iteration to
-    release memory before training (mirrors the old in-fit ``del``).
+    Output of ``prepare_features``: the fully prepared feature tensors for ONE
+    (image-layer, text-layer) pair — already layer-sliced (CLS) or token-loaded,
+    deduped, subsampled, and augmented. ``_train_layer_pair`` consumes this to
+    build and train the alignment layers; it adds nothing of its own.
 
-    The feature tensors are ``None`` in token mode: there ``prepare_features``
-    skips the CLS pre-load and the real (N, T, D) tokens are loaded per layer
-    pair in ``_train_layer_pair``.
+    The train/val tensors are the (N, D) CLS slices in CLS mode or the
+    (N, T, D) token tensors in token mode; ``text_mask_*`` is non-None only in
+    token mode. ``image_features_*`` etc. are never None for a real run (a layer
+    pair always yields features); Optional only documents intermediate states.
     """
 
+    layer_comb: tuple
+    layer_comb_score: float
+    layer_comb_str: str
     image_features_train: Optional[torch.Tensor]
     text_features_train: Optional[torch.Tensor]
     image_features_val: Optional[torch.Tensor]
     text_features_val: Optional[torch.Tensor]
-    sel_train_indices: object
-    sel_val_indices: object
-    token_subsample_train_idx: Optional[torch.Tensor]
+    text_mask_train: Optional[torch.Tensor]
+    text_mask_val: Optional[torch.Tensor]
     additional_image_features: Optional[torch.Tensor]
     additional_text_features: Optional[torch.Tensor]
-    sampled_df_alignment: "pd.DataFrame"
 
 
 class AlignmentTrainer(Trainer):
@@ -661,14 +663,18 @@ class AlignmentTrainer(Trainer):
         n_random_subsample_train: Optional[int] = None,
         n_random_subsample_val: Optional[int] = None,
         additional_unimodal_data: Optional[Dict[str, list]] = None,
+        n_random_additional_feats: Optional[int] = None,
     ) -> "PreparedFeatures":
-        """fit phases A+B+C: load + dedup + subsample features, pick layers.
+        """Build the fully prepared training features for one layer pair.
 
-        Loads the val/train image+text features (CLS view, unified-cache view,
-        or a token-mode stub), applies ``drop_duplicates`` dedup and
-        ``n_random_subsample_*``, gathers any additional unimodal data, and
-        computes (or pins) the layer combinations to train. Returns a
-        :class:`PreparedFeatures` the per-combo training loop consumes.
+        Loads the val/train image+text features (CLS view or unified-cache
+        view; token mode defers to the per-pair token load), applies
+        ``drop_duplicates`` dedup and ``n_random_subsample_*``, gathers any
+        additional unimodal data, picks the single layer pair to train (errors
+        on a multi-pair sweep), then slices / token-loads / augments that pair.
+        Returns a :class:`PreparedFeatures` that ``_train_layer_pair`` trains on
+        directly. This is also the extraction-stage entry point — running it
+        materialises every cache the training stage needs.
 
         Honours ``self._require_cached`` (set by ``fit``) on every feature
         load. Reading + writing ``self.{image,text}_features_{train,val}`` is
@@ -1005,84 +1011,15 @@ class AlignmentTrainer(Trainer):
                 np.nan,
             ]
 
-        return PreparedFeatures(
-            image_features_train=image_features_train,
-            text_features_train=text_features_train,
-            image_features_val=image_features_val,
-            text_features_val=text_features_val,
-            sel_train_indices=sel_train_indices,
-            sel_val_indices=sel_val_indices,
-            token_subsample_train_idx=token_subsample_train_idx,
-            additional_image_features=additional_image_features,
-            additional_text_features=additional_text_features,
-            sampled_df_alignment=sampled_df_alignment,
-        )
-
-    def fit(
-        self,
-        n_random_subsample_train: Optional[int] = None,
-        n_random_subsample_val: Optional[int] = None,
-        additional_unimodal_data: Optional[Dict[str, list]] = None,
-        n_random_additional_feats: Optional[int] = None,
-        extract_only: bool = False,
-        require_cached: bool = False,
-    ):
-        # Stage-decoupling flags (goal 3.2). require_cached forbids encoder
-        # runs (train/eval stages read cache only); extract_only stops after
-        # feature prep so the extraction stage writes caches without training.
-        # extract_only implies the loads must run encoders, so it never sets
-        # require_cached. Stored on self so the get_*_features wrappers — and
-        # the nested token-bundle loads — pick it up.
-        self._require_cached = require_cached
-
-        prepared = self.prepare_features(
-            n_random_subsample_train=n_random_subsample_train,
-            n_random_subsample_val=n_random_subsample_val,
-            additional_unimodal_data=additional_unimodal_data,
-        )
-
-        # for each sampled (image-layer, text-layer) pair, train the alignment
-        # between the representations (per-pair work lives in _train_layer_pair).
-        print(prepared.sampled_df_alignment)
-        comb_iter = prepared.sampled_df_alignment.iterrows()
-        for i_comb, (_, layer_series) in enumerate(comb_iter):
-            self._train_layer_pair(
-                prepared=prepared,
-                layer_series=layer_series,
-                i_comb=i_comb,
-                n_random_additional_feats=n_random_additional_feats,
-                extract_only=extract_only,
+        print(sampled_df_alignment)
+        if len(sampled_df_alignment) > 1:
+            raise ValueError(
+                "prepare_features supports a single (image, text) layer "
+                f"pair; got {len(sampled_df_alignment)} pairs. Multi-pair "
+                "layer sweeps (best_only=false / last_only=false) are not "
+                "supported by the eager prepare path."
             )
-        # first stop the wandb run
-        wandb.run.finish()
-        wandb.finish()
-
-    def _train_layer_pair(
-        self,
-        prepared: "PreparedFeatures",
-        layer_series,
-        i_comb: int,
-        n_random_additional_feats: Optional[int],
-        extract_only: bool,
-    ):
-        """fit phase D for one (image-layer, text-layer) pair.
-
-        Slice / token-override the features at this combo's layers, build the
-        loss + alignment layers + optimiser, run the epoch loop, then
-        checkpoint and evaluate. Whole-set tensors come from ``prepared``; on
-        the only/last combo they are nulled to release memory before the
-        training loop (mirrors the old in-fit ``del``).
-        """
-        image_features_train = prepared.image_features_train
-        text_features_train = prepared.text_features_train
-        image_features_val = prepared.image_features_val
-        text_features_val = prepared.text_features_val
-        sel_train_indices = prepared.sel_train_indices
-        sel_val_indices = prepared.sel_val_indices
-        token_subsample_train_idx = prepared.token_subsample_train_idx
-        additional_image_features = prepared.additional_image_features
-        additional_text_features = prepared.additional_text_features
-        sampled_df_alignment = prepared.sampled_df_alignment
+        layer_series = sampled_df_alignment.iloc[0]
         layer_comb = layer_series["indices"]
         image_layer_idx, text_layer_idx = layer_comb
         layer_comb_score = layer_series["alignment_score"]
@@ -1220,26 +1157,15 @@ class AlignmentTrainer(Trainer):
                 :, text_layer_idx, :
             ]
 
-        if (
-            len(sampled_df_alignment) == 1
-            or i_comb == len(sampled_df_alignment) - 1
-        ):
-            # clean up the memory if we're only doing one comb or its the last.
-            # Null the PreparedFeatures fields too: `prepared` is the sole owner
-            # of these whole-set tensors, so dropping only the local refs would
-            # not actually free them (this method no longer owns them outright).
-            del image_features_train, text_features_train
-            del image_features_val, text_features_val
-            prepared.image_features_train = None
-            prepared.text_features_train = None
-            prepared.image_features_val = None
-            prepared.text_features_val = None
-            if additional_image_features is not None:
-                del additional_image_features
-                prepared.additional_image_features = None
-            if additional_text_features is not None:
-                del additional_text_features
-                prepared.additional_text_features = None
+        # Release the whole-set CLS tensors now that this layer pair's
+        # training tensors (layer_* slices / token tensors) are materialised.
+        # Single layer pair only (guarded above), so this always runs.
+        del image_features_train, text_features_train
+        del image_features_val, text_features_val
+        if additional_image_features is not None:
+            del additional_image_features
+        if additional_text_features is not None:
+            del additional_text_features
 
         l_add_img_feats = []
         for add_img_feat_paths in self.config["features"].get(
@@ -1334,25 +1260,76 @@ class AlignmentTrainer(Trainer):
             wandb.log(log_dict)
         del log_dict
 
-        if extract_only:
-            # Feature prep for this combo is done — caches are written. Skip
-            # alignment-layer build / train loop / eval and return so the fit()
-            # loop advances to the next combo (each combo's caches still get
-            # materialised).
-            logger.info(
-                f"extract_only: features ready for layers {layer_comb}; "
-                "skipping training."
-            )
-            return
+        # Features for this layer pair are fully prepared (sliced / token-loaded
+        # / deduped / subsampled / augmented). The extraction stage stops here;
+        # _train_layer_pair consumes this to build + train the alignment layers.
+        return PreparedFeatures(
+            layer_comb=layer_comb,
+            layer_comb_score=layer_comb_score,
+            layer_comb_str=layer_comb_str,
+            image_features_train=layer_image_features_train,
+            text_features_train=layer_text_features_train,
+            image_features_val=layer_image_features_val,
+            text_features_val=layer_text_features_val,
+            text_mask_train=layer_text_mask_train,
+            text_mask_val=layer_text_mask_val,
+            additional_image_features=layer_additional_image_features,
+            additional_text_features=layer_additional_text_features,
+        )
+
+    def fit(
+        self,
+        n_random_subsample_train: Optional[int] = None,
+        n_random_subsample_val: Optional[int] = None,
+        additional_unimodal_data: Optional[Dict[str, list]] = None,
+        n_random_additional_feats: Optional[int] = None,
+        require_cached: bool = False,
+    ):
+        # require_cached (goal 3.2) forbids encoder runs — the train/eval
+        # stages read cache only. Stored on self so the get_*_features wrappers
+        # (and the nested token-bundle loads) pick it up. Extraction is a
+        # separate entry point: extract.py calls prepare_features directly.
+        self._require_cached = require_cached
+
+        prepared = self.prepare_features(
+            n_random_subsample_train=n_random_subsample_train,
+            n_random_subsample_val=n_random_subsample_val,
+            additional_unimodal_data=additional_unimodal_data,
+            n_random_additional_feats=n_random_additional_feats,
+        )
+        self._train_layer_pair(prepared)
+        # stop the wandb run
+        wandb.run.finish()
+        wandb.finish()
+
+    def _train_layer_pair(self, prepared: "PreparedFeatures"):
+        """fit phase D: build + train the alignment layers for one layer pair.
+
+        Consumes the fully prepared features from ``prepare_features`` (already
+        sliced / token-loaded / deduped / subsampled / augmented), builds the
+        loss + alignment layers + optimiser, runs the epoch loop, then
+        checkpoints and evaluates. Adds no feature preparation of its own.
+        """
+        layer_comb = prepared.layer_comb
+        layer_comb_score = prepared.layer_comb_score
+        layer_comb_str = prepared.layer_comb_str
+        layer_image_features_train = prepared.image_features_train
+        layer_text_features_train = prepared.text_features_train
+        layer_image_features_val = prepared.image_features_val
+        layer_text_features_val = prepared.text_features_val
+        layer_text_mask_train = prepared.text_mask_train
+        layer_text_mask_val = prepared.text_mask_val
+        layer_additional_image_features = prepared.additional_image_features
+        layer_additional_text_features = prepared.additional_text_features
+        token_level = bool(self.config["training"].get("token_level", False))
 
         logger.info(
             f"Training alignment for layers {layer_comb} (score: {layer_comb_score:.4f})"
         )
 
-        # Recompute input_dim from the actual features that will be
-        # trained on. The CLS stubs used when token_level=True have
-        # shape (N, 1), so image_dim/text_dim set earlier would be 1
-        # instead of the real embedding dimension.
+        # input_dim comes from the actual features being trained on — in token
+        # mode these are the (N, T, D) tensors for this layer pair, so the
+        # embedding dim is only known here.
         image_dim = layer_image_features_train.shape[-1]
         text_dim = layer_text_features_train.shape[-1]
 

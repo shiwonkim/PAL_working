@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List
 
 import torchvision.transforms as transforms
+import wandb
 import yaml
 from loguru import logger
 from torch.utils.data import DataLoader
@@ -85,12 +86,13 @@ def run(
     extract_only: bool = False,
     require_cached: bool = False,
 ):
-    """Build the trainer from a config and run ``fit()``.
+    """Build the trainer from a config and run the requested stage.
 
-    Single setup path shared by the stage CLIs (goal 3.2): ``extract.py``
-    calls it with ``extract_only=True`` (encoders → cache, no training),
-    ``train.py`` with ``require_cached=True`` (cache only, no encoders), and
-    ``train_alignment.py`` with both False (the original extract+train run).
+    Single setup path shared by the stage CLIs: ``extract.py`` calls it with
+    ``extract_only=True`` (runs only ``prepare_features`` — caches, no
+    training), ``train.py`` with ``require_cached=True`` (``fit`` reads cache
+    only, no encoders), and ``train_alignment.py`` with both False (the full
+    extract+train ``fit`` run).
     """
     config_path = Path(config_path)
     if not config_path.exists():
@@ -204,13 +206,33 @@ def run(
         trainer = CLIPEvalTrainer(**trainer_kwargs)
     else:
         trainer = AlignmentTrainer(**trainer_kwargs)
-    trainer.fit(
-        additional_unimodal_data=additional_unimodal_data,
-        n_random_subsample_train=config["training"].get("n_random_subsample_train"),
-        n_random_subsample_val=config["training"].get("n_random_subsample_val"),
-        extract_only=extract_only,
-        require_cached=require_cached,
-    )
+    if extract_only:
+        # Extraction stage: prepare_features now materialises every cache the
+        # training stage needs (including the per-layer-pair token caches), so
+        # the extract stage is exactly prepare_features with no training.
+        trainer.prepare_features(
+            n_random_subsample_train=config["training"].get(
+                "n_random_subsample_train"
+            ),
+            n_random_subsample_val=config["training"].get(
+                "n_random_subsample_val"
+            ),
+            additional_unimodal_data=additional_unimodal_data,
+        )
+        # Close the wandb run the trainer opened (fit() does this at its end).
+        wandb.run.finish()
+        wandb.finish()
+    else:
+        trainer.fit(
+            additional_unimodal_data=additional_unimodal_data,
+            n_random_subsample_train=config["training"].get(
+                "n_random_subsample_train"
+            ),
+            n_random_subsample_val=config["training"].get(
+                "n_random_subsample_val"
+            ),
+            require_cached=require_cached,
+        )
     del trainer
 
 

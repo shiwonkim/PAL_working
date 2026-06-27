@@ -22,7 +22,7 @@ which `importlib`-loads every module under `src/alignment/` to run their
 `@register` decorators — and (2) `__init__.py` side effects. The dynamic capture
 catches both.
 
-Entry-point note: `src/extract.py`, `src/train.py`, `rerun_eval.py` are entry
+Entry-point note: `src/extract_features.py`, `src/train.py`, `rerun_eval.py` are entry
 points — they load others but are not themselves imported by the run, so they
 are listed as USED by definition.
 
@@ -33,7 +33,7 @@ are listed as USED by definition.
 ### Entry points (CLIs)
 | File | Stage | Role |
 |---|---|---|
-| `src/extract.py` | **extract** | `run(extract_only=True)` — encoders → cache, no training |
+| `src/extract_features.py` | **extract** | `run(extract_only=True)` — encoders → cache, no training |
 | `src/train.py` | **train** | `run(require_cached=True)` — cache only, no encoders |
 | `src/train_alignment.py` | extract+train | shared setup (`run` / `load_dataset`) + combined run |
 | `rerun_eval.py` | **eval** | load checkpoint → standalone retrieval + zero-shot |
@@ -93,7 +93,7 @@ are listed as USED by definition.
 `compute_score`. They were the multi-model "Platonic Representation" extraction +
 alignment-benchmark path (model zoo via `get_models`, ViT+conv), which the PAL
 single-encoder-pair workflow never ran. `extract_token_features.py` was a thin
-wrapper superseded by `extract.py` (= `prepare_features`). The live
+wrapper superseded by `extract_features.py` (= `prepare_features`). The live
 `compute_score` (layer selection) is retained.
 
 ---

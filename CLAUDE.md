@@ -45,7 +45,7 @@ feature caches, checkpoints, and the frozen, revision-ready code.
    `src/utils/feature_store.py` owns cache path building, extract-or-load (mmap), encoder
    builders, text-mask I/O, and image-dedup; `FeatureSpec.cache_suffix` centralises suffix
    construction. Stage decoupling (extract → train → eval) via `require_cached` + the thin
-   CLIs `src/{extract,train}.py` + `scripts/run_pipeline.sh`. **Remaining: 3.3 LAION memory
+   CLIs `src/{extract_features,train}.py` + `scripts/run_pipeline.sh`. **Remaining: 3.3 LAION memory
    reimplementation** (virtual-concat + mmap + buffer-shuffle + prefetch) — see
    `docs/laion_reimplementation_TODO.md`; deferred on the `serverB` branch.
 4. **Consolidate the CLS ↔ Token branching** ✅ *done* — `token_level` stays a config flag

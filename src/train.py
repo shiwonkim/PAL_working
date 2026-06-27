@@ -3,7 +3,7 @@
 Reads feature caches only and refuses to run encoders: ``run(...,
 require_cached=True)``. A cache miss raises a clear error pointing at the
 extraction stage instead of silently spinning up encoders. Pair with
-``src/extract.py`` (writes caches) and ``rerun_eval.py`` (eval), chained by
+``src/extract_features.py`` (writes caches) and ``rerun_eval.py`` (eval), chained by
 ``scripts/run_pipeline.sh``.
 
     python -m src.train --config_path <config.yaml>

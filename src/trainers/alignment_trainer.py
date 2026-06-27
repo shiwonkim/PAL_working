@@ -1287,7 +1287,7 @@ class AlignmentTrainer(Trainer):
         # require_cached (goal 3.2) forbids encoder runs — the train/eval
         # stages read cache only. Stored on self so the get_*_features wrappers
         # (and the nested token-bundle loads) pick it up. Extraction is a
-        # separate entry point: extract.py calls prepare_features directly.
+        # separate entry point: extract_features.py calls prepare_features directly.
         self._require_cached = require_cached
 
         prepared = self.prepare_features(

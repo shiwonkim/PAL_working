@@ -4,7 +4,7 @@ Runs encoders to materialise the feature caches, then stops before training:
 ``run(..., extract_only=True)``. Pair with ``src/train.py`` (cache-only) and
 ``rerun_eval.py`` (eval), chained by ``scripts/run_pipeline.sh``.
 
-    python -m src.extract --config_path <config.yaml>
+    python -m src.extract_features --config_path <config.yaml>
 """
 
 from src.train_alignment import build_arg_parser, run

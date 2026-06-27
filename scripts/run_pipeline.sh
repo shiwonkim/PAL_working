@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stage pipeline (goal 3.2): extract -> train [-> eval], chained.
 #
-#   extract.py  encoders -> feature cache (extract_only)
+#   extract_features.py  encoders -> feature cache (extract_only)
 #   train.py    cache only, no encoders (require_cached)
 #   rerun_eval  optional; needs the trained checkpoint
 #
@@ -17,7 +17,7 @@ set -euo pipefail
 CONFIG="${1:?usage: run_pipeline.sh <config.yaml>}"
 
 echo "=== [1/3] extract: encoders -> cache ==="
-python -m src.extract --config_path "$CONFIG"
+python -m src.extract_features --config_path "$CONFIG"
 
 echo "=== [2/3] train: cache only (require_cached) ==="
 python -m src.train --config_path "$CONFIG"

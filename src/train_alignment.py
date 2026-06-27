@@ -88,7 +88,7 @@ def run(
 ):
     """Build the trainer from a config and run the requested stage.
 
-    Single setup path shared by the stage CLIs: ``extract.py`` calls it with
+    Single setup path shared by the stage CLIs: ``extract_features.py`` calls it with
     ``extract_only=True`` (runs only ``prepare_features`` — caches, no
     training), ``train.py`` with ``require_cached=True`` (``fit`` reads cache
     only, no encoders), and ``train_alignment.py`` with both False (the full

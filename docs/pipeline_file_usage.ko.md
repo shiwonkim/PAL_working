@@ -20,7 +20,7 @@ import된 모듈을 `sys.modules`에서 캡처(동적 ground truth):
 `src/alignment/` 아래 모든 모듈을 `importlib`로 로드(`@register` 데코레이터
 실행) — 과 (2) `__init__.py` 부수효과를 놓침. 동적 캡처는 둘 다 잡음.
 
-진입점 주의: `src/extract.py`, `src/train.py`, `rerun_eval.py`는 진입점이라
+진입점 주의: `src/extract_features.py`, `src/train.py`, `rerun_eval.py`는 진입점이라
 남을 로드하지만 자신은 실행 중 import되지 않으므로, 정의상 USED로 분류.
 
 ---
@@ -30,7 +30,7 @@ import된 모듈을 `sys.modules`에서 캡처(동적 ground truth):
 ### 진입점 (CLI)
 | 파일 | 작업 | 역할 |
 |---|---|---|
-| `src/extract.py` | **extract** | `run(extract_only=True)` — 인코더 → 캐시, 학습 X |
+| `src/extract_features.py` | **extract** | `run(extract_only=True)` — 인코더 → 캐시, 학습 X |
 | `src/train.py` | **train** | `run(require_cached=True)` — 캐시만 읽고 학습 |
 | `src/train_alignment.py` | extract+train | 공용 setup(`run` / `load_dataset`) + combined 실행 |
 | `rerun_eval.py` | **eval** | 체크포인트 로드 → retrieval + zero-shot 독립 평가 |
@@ -89,7 +89,7 @@ import된 모듈을 `sys.modules`에서 캡처(동적 ground truth):
 `src/models/tasks.py` 삭제 + `src/measure_alignment.py`를 `compute_score`만 남기고
 정리. 이들은 다중 모델 "Platonic Representation" 추출 + 정렬 벤치마크 경로(`get_models`
 model zoo, ViT+conv)로, PAL의 단일 인코더쌍 워크플로가 한 번도 안 씀.
-`extract_token_features.py`는 `extract.py`(= `prepare_features`)로 대체된 얇은 래퍼.
+`extract_token_features.py`는 `extract_features.py`(= `prepare_features`)로 대체된 얇은 래퍼.
 실사용되는 `compute_score`(layer selection)는 유지.
 
 ---

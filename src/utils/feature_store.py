@@ -25,18 +25,14 @@ from pathlib import Path
 from typing import Optional, Union
 
 import numpy as np
-import timm
 import torch
 from loguru import logger
-from timm.data import resolve_data_config
-from timm.data.transforms_factory import create_transform
 from torch.utils.data import DataLoader
-from torchvision.models.feature_extraction import create_feature_extractor
 from tqdm import tqdm
 
 from src.core.src.datasets.downstream_tasks.coco_dataset import LoadingType
-from src.dataset_preparation.data_utils import _ensure_rgb_image
-from src.models.text.models import load_llm, load_tokenizer
+from src.encoders.text_models import load_llm, load_tokenizer
+from src.encoders.vision_models import load_lvm
 from src.utils.utils import set_transform_dataset
 
 
@@ -95,32 +91,13 @@ class FeatureStore:
         return language_model, tokenizer
 
     def get_lvm(self, lvm_model_name: str):
-        img_size = self.config["features"].get("img_size")
-        model_kwargs = {}
-        if img_size is not None:
-            model_kwargs["img_size"] = int(img_size)
-        vision_model = timm.create_model(
-            lvm_model_name, pretrained=True, **model_kwargs
+        # Thin wrapper over encoders.vision_models.load_lvm; the store only
+        # supplies img_size + device (mirrors get_llm wrapping load_llm).
+        return load_lvm(
+            lvm_model_name,
+            img_size=self.config["features"].get("img_size"),
+            device=self.device,
         )
-        data_config = resolve_data_config(
-            vision_model.pretrained_cfg, model=vision_model
-        )
-        if img_size is not None:
-            data_config["input_size"] = (3, int(img_size), int(img_size))
-            data_config["crop_pct"] = 1.0
-        transform = create_transform(**data_config)
-        transform.transforms = [_ensure_rgb_image] + transform.transforms
-
-        if "vit" in lvm_model_name:
-            return_nodes = [
-                f"blocks.{i}.add_1" for i in range(len(vision_model.blocks))
-            ]
-        else:
-            raise NotImplementedError(f"unknown model {lvm_model_name}")
-        vision_model = create_feature_extractor(vision_model, return_nodes=return_nodes)
-        vision_model = vision_model.to(self.device)
-        vision_model = vision_model.eval()
-        return vision_model, transform
 
     # ------------------------------------------------------------------
     # Extract-or-load

@@ -38,7 +38,7 @@ from src.core.src.utils.loader import Loader, merge_dicts
 from src.dataset_preparation.data_utils import get_datasets
 from src.evaluation.zero_shot_classifier import build_zero_shot_classifier
 from src.evaluation.consts import DATASETS_TO_CLASSES, DATASETS_TO_TEMPLATES
-from src.models.text.models import load_llm, load_tokenizer
+from src.encoders.text_models import load_llm, load_tokenizer
 from src.utils.checkpoint import load_alignment_layer
 
 

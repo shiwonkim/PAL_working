@@ -12,8 +12,6 @@ from src.datasets.image_text_dataset import ImageTextDataset
 from src.utils.yaml_loader import Loader, merge_dicts
 from src.datasets.data_utils import get_datasets, get_default_transforms
 from src.training.trainers.alignment_trainer import AlignmentTrainer
-from src.training.trainers.clip_eval_trainer import CLIPEvalTrainer
-from src.training.trainers.csa_trainer import CSATrainer
 
 
 def load_dataset(
@@ -200,12 +198,7 @@ def run(
         "wandb_notes": wandb_notes,
     }
     trainer_kwargs = trainer_kwargs | config["alignment"]
-    if "cca" in config["training"].keys() and config["training"]["cca"]:
-        trainer = CSATrainer(**trainer_kwargs)
-    elif "clip" in config["training"].keys() and config["training"]["clip"]:
-        trainer = CLIPEvalTrainer(**trainer_kwargs)
-    else:
-        trainer = AlignmentTrainer(**trainer_kwargs)
+    trainer = AlignmentTrainer(**trainer_kwargs)
     if extract_only:
         # Extraction stage: prepare_features now materialises every cache the
         # training stage needs (including the per-layer-pair token caches), so

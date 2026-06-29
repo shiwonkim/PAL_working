@@ -42,7 +42,6 @@ from src.evaluation.zero_shot_classifier import (
     chunked_logits,
 )
 from src.training.loss.clip_loss import CLIPLoss
-from src.training.loss.siglip_loss import SigLipLoss
 from src.utils.measure_alignment import compute_score
 from src.training.trainers.base_trainer import Trainer
 from src.utils.utils import (
@@ -1333,15 +1332,9 @@ class AlignmentTrainer(Trainer):
         text_dim = layer_text_features_train.shape[-1]
 
         # define the loss function
-        loss_name = self.config["training"].get("clip_loss_name", "CLIPLoss")
-        if loss_name == "SigLipLoss":
-            self.loss = SigLipLoss(
-                structure_lambda=self.config["training"]["clip_loss"].get("structure_lambda", 0),
-            ).to(self.device)
-        else:
-            self.loss = CLIPLoss(
-                **self.config["training"]["clip_loss"],
-            ).to(self.device)
+        self.loss = CLIPLoss(
+            **self.config["training"]["clip_loss"],
+        ).to(self.device)
 
         alignment_image = AlignmentFactory.create(
             self.config["training"]["alignment_layer_name"],

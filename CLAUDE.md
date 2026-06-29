@@ -9,10 +9,11 @@ feature caches, checkpoints, and the frozen, revision-ready code.
 
 - A snapshot of the STRUCTURE codebase (tracked source only), imported for refactoring.
 - **"PAL"** (Projection-free Anchor Learning) is the method name, formerly "BridgeAnchors"
-  / "BA". The alignment layer is a single `PALAlignmentLayer` (`src/alignment/pal.py`) that
+  / "BA". The alignment layer is a single `PALAlignmentLayer` (`src/models/alignment/pal.py`) that
   serves both modes — CLS (2D input → cosine profile) and token (3D input → CAP); which
-  mode runs is set by config `token_level`, not the class. A `CLASS_NAME_ALIASES` map in
-  `src/utils/checkpoint.py` keeps pre-rename / pre-merge checkpoints loading.
+  mode runs is set by config `token_level`, not the class. Checkpoints are rebuilt by
+  `class_name` through `AlignmentFactory` (`src/utils/checkpoint.py`), so directory moves /
+  renames don't break loading.
 - **No `data/`, `results/`, or checkpoints here.** To actually run training/eval, symlink
   them from the original repo:
   `cd ~/PAL_working && ln -s ~/STRUCTURE/data ~/STRUCTURE/results .`
@@ -36,21 +37,23 @@ feature caches, checkpoints, and the frozen, revision-ready code.
 
 ## Refactor goals (the plan)
 
-1. **Checkpoints → `state_dict`** ✅ *done* — `src/utils/checkpoint.py` (serialize / load
-   with legacy + alias handling) and `scripts/migrate_checkpoints.py` convert the old
-   pickled-module checkpoints to a self-describing state_dict format.
+1. **Checkpoints → `state_dict`** ✅ *done* — `src/utils/checkpoint.py` serializes / loads
+   the self-describing state_dict format. The legacy pickled-module support, the
+   `CLASS_NAME_ALIASES` remapping, and the one-off `migrate_checkpoints.py` converter were
+   removed once every in-use checkpoint was migrated; old pickles load with the original
+   pre-refactor code.
 2. **Rename classes to PAL** ✅ *done* — `BridgeAnchor*` → `PAL*`, `configs/ba` →
    `configs/pal`, with runtime class-name checks and checkpoint `class_name` strings updated.
 3. **Extract a FeatureStore** abstraction ✅ *core done; LAION (3.3) deferred* —
-   `src/utils/feature_store.py` owns cache path building, extract-or-load (mmap), encoder
+   `src/features/feature_store.py` owns cache path building, extract-or-load (mmap), encoder
    builders, text-mask I/O, and image-dedup; `FeatureSpec.cache_suffix` centralises suffix
    construction. Stage decoupling (extract → train → eval) via `require_cached` + the thin
-   CLIs `src/{extract_features,train}.py` + `scripts/run_pipeline.sh`. **Remaining: 3.3 LAION memory
+   CLIs `src/{extract_features,train}.py` + `run_pipeline.sh`. **Remaining: 3.3 LAION memory
    reimplementation** (virtual-concat + mmap + buffer-shuffle + prefetch) — see
    `docs/laion_reimplementation_TODO.md`; deferred on the `serverB` branch.
 4. **Consolidate the CLS ↔ Token branching** ✅ *done* — `token_level` stays a config flag
    (not derivable from the layer class); its propagation is centralised in
-   `src/utils/feature_spec.py` (`FeatureSpec`), and the CLS/token PAL layers are merged into one
+   `src/features/feature_spec.py` (`FeatureSpec`), and the CLS/token PAL layers are merged into one
    `PALAlignmentLayer` that picks the path by input rank.
 5. **Split the oversized `AlignmentTrainer`** ✅ *done* — `fit()` (~840 lines) split into
    `prepare_features` (eager: load / dedup / subsample / layer-select / slice or token-load one

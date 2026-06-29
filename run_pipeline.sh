@@ -6,8 +6,8 @@
 #   rerun_eval  optional; needs the trained checkpoint
 #
 # Usage:
-#   scripts/run_pipeline.sh <config.yaml>
-#   CKPT=<ckpt> LABEL=<label> ZS=<csv> RT=<csv> scripts/run_pipeline.sh <config.yaml>
+#   run_pipeline.sh <config.yaml>
+#   CKPT=<ckpt> LABEL=<label> ZS=<csv> RT=<csv> run_pipeline.sh <config.yaml>
 #
 # The eval stage is run only when CKPT is set, because rerun_eval.py keys off
 # the checkpoint produced by the train run (its path is run-name dependent and

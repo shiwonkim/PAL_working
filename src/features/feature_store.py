@@ -75,7 +75,7 @@ class FeatureStore:
             f"  {save_path}\n"
             "Run the extraction stage first to materialise it, e.g.\n"
             "  python -m src.extract_features --config_path <your-config>\n"
-            "(or scripts/run_pipeline.sh). The train/eval stage refuses to run "
+            "(or run_pipeline.sh). The train/eval stage refuses to run "
             "encoders when require_cached=True."
         )
 

@@ -2,7 +2,7 @@
 
 Runs encoders to materialise the feature caches, then stops before training:
 ``run(..., extract_only=True)``. Pair with ``src/train.py`` (cache-only) and
-``rerun_eval.py`` (eval), chained by ``scripts/run_pipeline.sh``.
+``rerun_eval.py`` (eval), chained by ``run_pipeline.sh``.
 
     python -m src.extract_features --config_path <config.yaml>
 """

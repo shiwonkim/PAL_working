@@ -24,7 +24,7 @@ from src.alignment.alignment_factory import AlignmentFactory
 from src.utils.checkpoint import serialize_alignment_layer
 from src.utils.feature_spec import FeatureSpec
 from src.utils.feature_store import FeatureStore
-from src.utils.optim.optimizer import get_optimizer_type
+from src.training.optim.optimizer import get_optimizer_type
 from src.utils.plotting import embedding_plot, embedding_plot_w_markers
 from src.utils.train_utils import EarlyStopping, clip_gradients, save_checkpoint
 from src.data.data_utils import (
@@ -41,10 +41,10 @@ from src.evaluation.zero_shot_classifier import (
     build_zero_shot_classifier,
     chunked_logits,
 )
-from src.loss.clip_loss import CLIPLoss
-from src.loss.siglip_loss import SigLipLoss
-from src.measure_alignment import compute_score
-from src.trainers.base_trainer import Trainer
+from src.training.loss.clip_loss import CLIPLoss
+from src.training.loss.siglip_loss import SigLipLoss
+from src.training.measure_alignment import compute_score
+from src.training.base_trainer import Trainer
 from src.utils.utils import (
     continuity,
     safe_normalize,

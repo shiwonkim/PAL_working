@@ -11,7 +11,7 @@ from cca_zoo.linear import CCA
 from scipy.linalg import sqrtm
 from tqdm import trange
 
-from src.loss.clip_loss import structure_reg
+from src.training.loss.clip_loss import structure_reg
 from src.utils.utils import safe_normalize
 
 

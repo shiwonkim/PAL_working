@@ -19,7 +19,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.loss.clip_loss import structure_reg, DistanceFunction, Centering
+from src.training.loss.clip_loss import structure_reg, DistanceFunction, Centering
 
 
 class SigLipLoss(nn.Module):

@@ -83,7 +83,7 @@ from src.utils.loader import Loader, merge_dicts
 from src.data.data_utils import _ensure_rgb_image
 from src.evaluation.consts import DATASETS_TO_TEMPLATES
 from src.evaluation.zero_shot_classifier import build_zero_shot_classifier
-from src.encoders.text_models import load_llm, load_tokenizer
+from src.models.encoders.text_models import load_llm, load_tokenizer
 from src.utils.checkpoint import load_alignment_layer
 
 # ------------------------------------------------------------------

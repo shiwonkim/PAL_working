@@ -1,5 +1,5 @@
-from ..alignment.base_alignment_layer import BaseAlignmentLayer
-from ..utils.base_factory import BaseFactory
+from src.models.alignment.base_alignment_layer import BaseAlignmentLayer
+from src.utils.base_factory import BaseFactory
 
 
 class AlignmentFactory(BaseFactory):

@@ -28,7 +28,7 @@ import torch
 import torch.nn as nn
 from loguru import logger
 
-from src.alignment.alignment_factory import AlignmentFactory
+from src.models.alignment.alignment_factory import AlignmentFactory
 
 ALIGNMENT_FORMAT = "alignment_state_dict_v1"
 

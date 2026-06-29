@@ -20,7 +20,7 @@ from torch.utils.data import DataLoader
 from torchinfo import summary
 from tqdm import tqdm, trange
 
-from src.alignment.alignment_factory import AlignmentFactory
+from src.models.alignment.alignment_factory import AlignmentFactory
 from src.utils.checkpoint import serialize_alignment_layer
 from src.utils.feature_spec import FeatureSpec
 from src.utils.feature_store import FeatureStore

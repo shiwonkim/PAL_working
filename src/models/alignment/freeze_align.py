@@ -59,8 +59,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from loguru import logger
 
-from src.alignment.alignment_factory import AlignmentFactory
-from src.alignment.base_alignment_layer import BaseAlignmentLayer
+from src.models.alignment.alignment_factory import AlignmentFactory
+from src.models.alignment.base_alignment_layer import BaseAlignmentLayer
 
 
 class PatchProjection(nn.Module):

@@ -4,9 +4,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.alignment.alignment_factory import AlignmentFactory
-from src.alignment.base_alignment_layer import BaseAlignmentLayer
-from src.alignment.linear_alignment_layer import _masked_mean_pool
+from src.models.alignment.alignment_factory import AlignmentFactory
+from src.models.alignment.base_alignment_layer import BaseAlignmentLayer
+from src.models.alignment.linear_alignment_layer import _masked_mean_pool
 
 
 @AlignmentFactory.register()

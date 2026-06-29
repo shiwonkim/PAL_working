@@ -15,7 +15,7 @@ from loguru import logger
 
 from src.utils.yaml_loader import Loader, merge_dicts
 from src.datasets.data_utils import get_datasets, get_default_transforms
-from src.training.train_alignment import load_dataset
+from src.train import load_dataset
 from src.training.trainers.alignment_trainer import AlignmentTrainer
 
 parser = argparse.ArgumentParser(

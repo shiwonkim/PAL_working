@@ -4,7 +4,7 @@ the comparison table with DTD, Flowers102, GTSRB, Flickr30k after
 training has finished.
 
 Usage:
-    python rerun_eval.py --config_path configs/... \
+    python -m src.eval --config_path configs/... \
         --ckpt path/to/checkpoint-epochN.pth \
         --label run_label_for_log \
         [--zs dtd,flowers,gtsrb] \
@@ -96,8 +96,8 @@ def main():
     import wandb
 
     wandb.init(
-        project="rerun_eval",
-        name=f"rerun_eval_{args.label}",
+        project="eval",
+        name=f"eval_{args.label}",
         mode="offline",
         reinit=True,
     )

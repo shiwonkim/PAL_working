@@ -1,1 +1,1 @@
-# Trainer classes (orchestrated by training/train_alignment.py).
+# Trainer classes (orchestrated by train.py).

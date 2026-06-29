@@ -112,11 +112,6 @@ class AlignmentTrainer(Trainer):
         )
         self.cache_features = cache_features
         self.print_model_summary = print_model_summary
-        # Stage-decoupling flag: when True, feature loads must hit the cache
-        # (no encoders). fit() sets it from its require_cached argument; the
-        # get_*_features wrappers read it so even the nested token-bundle
-        # loads honour it without per-call-site threading.
-        self._require_cached = False
         self.save_path = Path(config["paths"]["save_path"])
         self.llm_model_name = llm_model_name
         self.lvm_model_name = lvm_model_name
@@ -175,18 +170,6 @@ class AlignmentTrainer(Trainer):
             )
         return save_name
 
-    def _resolve_require_cached(self, require_cached: Optional[bool]) -> bool:
-        """Per-call override of the instance ``_require_cached`` flag.
-
-        ``None`` (the wrapper default) falls back to ``self._require_cached``,
-        so a fit(require_cached=True) run propagates to every feature load —
-        including the nested token-bundle loads — without threading the flag
-        through each call site.
-        """
-        if require_cached is None:
-            return self._require_cached
-        return require_cached
-
     def get_llm(self, llm_model_name: str):
         return self.feature_store.get_llm(llm_model_name)
 
@@ -201,12 +184,10 @@ class AlignmentTrainer(Trainer):
         dataset_name: Optional[str] = None,
         pool: Optional[str] = None,
         layer_index: Optional[int] = None,
-        require_cached: Optional[bool] = None,
     ):
         return self.feature_store.get_text_features(
             loader, llm_model_name, suffix=suffix, dataset_name=dataset_name,
             pool=pool, layer_index=layer_index,
-            require_cached=self._resolve_require_cached(require_cached),
         )
 
     def get_image_features(
@@ -218,7 +199,6 @@ class AlignmentTrainer(Trainer):
         allow_image_dedup: bool = True,
         pool: Optional[str] = None,
         layer_index: Optional[int] = None,
-        require_cached: Optional[bool] = None,
     ):
         return self.feature_store.get_image_features(
             loader,
@@ -228,7 +208,6 @@ class AlignmentTrainer(Trainer):
             allow_image_dedup=allow_image_dedup,
             pool=pool,
             layer_index=layer_index,
-            require_cached=self._resolve_require_cached(require_cached),
         )
 
     def compute_layer_alignment(
@@ -519,11 +498,9 @@ class AlignmentTrainer(Trainer):
 
     def _load_or_build_text_mask(
         self, loader, llm_model_name: str, suffix: str,
-        require_cached: Optional[bool] = None,
     ) -> torch.Tensor:
         return self.feature_store.load_or_build_text_mask(
             loader, llm_model_name, suffix,
-            require_cached=self._resolve_require_cached(require_cached),
         )
 
     def _load_eval_token_features(
@@ -675,8 +652,7 @@ class AlignmentTrainer(Trainer):
         directly. This is also the extraction-stage entry point — running it
         materialises every cache the training stage needs.
 
-        Honours ``self._require_cached`` (set by ``fit``) on every feature
-        load. Reading + writing ``self.{image,text}_features_{train,val}`` is
+        Reading + writing ``self.{image,text}_features_{train,val}`` is
         intentional — it is the in-process feature cache fit() relied on.
         """
         # pre-compute the embeddings from both modalities
@@ -1282,14 +1258,7 @@ class AlignmentTrainer(Trainer):
         n_random_subsample_val: Optional[int] = None,
         additional_unimodal_data: Optional[Dict[str, list]] = None,
         n_random_additional_feats: Optional[int] = None,
-        require_cached: bool = False,
     ):
-        # require_cached (goal 3.2) forbids encoder runs — the train/eval
-        # stages read cache only. Stored on self so the get_*_features wrappers
-        # (and the nested token-bundle loads) pick it up. Extraction is a
-        # separate entry point: extract_features.py calls prepare_features directly.
-        self._require_cached = require_cached
-
         prepared = self.prepare_features(
             n_random_subsample_train=n_random_subsample_train,
             n_random_subsample_val=n_random_subsample_val,

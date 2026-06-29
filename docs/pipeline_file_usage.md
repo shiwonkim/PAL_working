@@ -13,8 +13,8 @@ Not grep guesswork. The four pipeline entry points were **executed** and the
 modules they actually imported were captured from `sys.modules` (dynamic ground
 truth):
 
-- `extract` / `train` / combined → `python -m src.train_alignment` on the COCO
-  ViT-S smoke config (`run()` from `src/train_alignment.py`).
+- `extract` / `train` / combined → `python -m src.training.train_alignment` on the COCO
+  ViT-S smoke config (`run()` from `src/training/train_alignment.py`).
 - `eval` → `rerun_eval.py` with the firefly token checkpoint (zs/rt emptied to
   capture imports without the slow eval loop).
 
@@ -37,7 +37,7 @@ they are listed as USED by definition.
 |---|---|---|
 | `src/extract_features.py` | **extract** | `run(extract_only=True)` — encoders → cache, no training |
 | `src/train.py` | **train** | `run(require_cached=True)` — cache only, no encoders |
-| `src/train_alignment.py` | extract+train | shared setup (`run` / `load_dataset`) + combined run |
+| `src/training/train_alignment.py` | extract+train | shared setup (`run` / `load_dataset`) + combined run |
 | `rerun_eval.py` | **eval** | load checkpoint → standalone retrieval + zero-shot |
 
 (`run_pipeline.sh` at the repo root chains these three stages.)
@@ -45,8 +45,8 @@ they are listed as USED by definition.
 ### Core pipeline (all three stages)
 | File | How it is used |
 |---|---|
-| `src/training/alignment_trainer.py` | the hub: `prepare_features` (data) + `_train_layer_pair` (train) + eval methods |
-| `src/training/base_trainer.py` | Trainer base (device, wandb init, lr finder) |
+| `src/training/trainers/alignment_trainer.py` | the hub: `prepare_features` (data) + `_train_layer_pair` (train) + eval methods |
+| `src/training/trainers/base_trainer.py` | Trainer base (device, wandb init, lr finder) |
 | `src/features/feature_store.py` | cache path / load (mmap) / extract / dedup — extract·train·eval |
 | `src/features/feature_spec.py` | centralises `token_level` policy (suffix / pool / layer) |
 | `src/utils/checkpoint.py` | state_dict serialize/load (train saves, eval loads) |
@@ -71,7 +71,7 @@ they are listed as USED by definition.
 ### Alternative trainers (config branch; imported on the extract/train path only)
 | File | Note |
 |---|---|
-| `src/training/clip_eval_trainer.py`, `csa_trainer.py` | only when config `clip:true` / `cca:true`; PAL default is `AlignmentTrainer` |
+| `src/training/trainers/clip_eval_trainer.py`, `csa_trainer.py` | only when config `clip:true` / `cca:true`; PAL default is `AlignmentTrainer` |
 
 ### Datasets / utils / optim
 | File |
@@ -87,7 +87,7 @@ they are listed as USED by definition.
 | Class | Files | Actual nature |
 |---|---|---|
 | **Separate eval entry points** (segmentation — a different task) | `src/evaluation/zero_shot_segmentation.py`, `zero_shot_patch_voting.py` | segmentation eval, separate from retrieval/zero-shot |
-| **Separate training entry point** | `src/train_subset.py` | standalone subset-training script |
+| **Separate training entry point** | `src/training/train_subset.py` | standalone subset-training script |
 | **Interpretability scripts** | `viz/*.py` | repo-root standalone figure/analysis scripts; import `src` as a library, not loaded by the pipeline |
 
 ### Removed during the cleanup (no longer in the tree)

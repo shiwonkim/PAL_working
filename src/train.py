@@ -9,7 +9,7 @@ extraction stage instead of silently spinning up encoders. Pair with
     python -m src.train --config_path <config.yaml>
 """
 
-from src.train_alignment import build_arg_parser, run
+from src.training.train_alignment import build_arg_parser, run
 
 if __name__ == "__main__":
     args = build_arg_parser(

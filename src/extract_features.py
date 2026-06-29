@@ -7,7 +7,7 @@ Runs encoders to materialise the feature caches, then stops before training:
     python -m src.extract_features --config_path <config.yaml>
 """
 
-from src.train_alignment import build_arg_parser, run
+from src.training.train_alignment import build_arg_parser, run
 
 if __name__ == "__main__":
     args = build_arg_parser(

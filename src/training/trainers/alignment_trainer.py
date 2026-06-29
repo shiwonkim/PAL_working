@@ -44,7 +44,7 @@ from src.evaluation.zero_shot_classifier import (
 from src.training.loss.clip_loss import CLIPLoss
 from src.training.loss.siglip_loss import SigLipLoss
 from src.utils.measure_alignment import compute_score
-from src.training.base_trainer import Trainer
+from src.training.trainers.base_trainer import Trainer
 from src.utils.utils import (
     continuity,
     safe_normalize,

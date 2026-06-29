@@ -40,7 +40,7 @@ from src.datasets.data_utils import (  # noqa: E402
     get_datasets,
     get_default_transforms,
 )
-from src.training.alignment_trainer import AlignmentTrainer  # noqa: E402
+from src.training.trainers.alignment_trainer import AlignmentTrainer  # noqa: E402
 from src.utils.checkpoint import load_alignment_layer  # noqa: E402
 
 

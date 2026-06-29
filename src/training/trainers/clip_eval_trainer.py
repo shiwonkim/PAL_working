@@ -27,7 +27,7 @@ from src.evaluation.zero_shot_classifier import (
     build_zero_shot_classifier,
     chunked_logits,
 )
-from src.training.alignment_trainer import AlignmentTrainer
+from src.training.trainers.alignment_trainer import AlignmentTrainer
 from src.utils.utils import set_transform_dataset
 
 

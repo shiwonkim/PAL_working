@@ -13,7 +13,7 @@ grep 추측이 아님. 파이프라인 진입점 4개를 **실제로 실행**하
 import된 모듈을 `sys.modules`에서 캡처(동적 ground truth):
 
 - `extract` / `train` / combined → COCO ViT-S smoke config로
-  `python -m src.train_alignment` (`src/train_alignment.py`의 `run()`).
+  `python -m src.training.train_alignment` (`src/training/train_alignment.py`의 `run()`).
 - `eval` → firefly 토큰 체크포인트로 `rerun_eval.py` (느린 eval 루프 없이
   import만 잡으려고 zs/rt를 비움).
 
@@ -34,7 +34,7 @@ import된 모듈을 `sys.modules`에서 캡처(동적 ground truth):
 |---|---|---|
 | `src/extract_features.py` | **extract** | `run(extract_only=True)` — 인코더 → 캐시, 학습 X |
 | `src/train.py` | **train** | `run(require_cached=True)` — 캐시만 읽고 학습 |
-| `src/train_alignment.py` | extract+train | 공용 setup(`run` / `load_dataset`) + combined 실행 |
+| `src/training/train_alignment.py` | extract+train | 공용 setup(`run` / `load_dataset`) + combined 실행 |
 | `rerun_eval.py` | **eval** | 체크포인트 로드 → 독립 retrieval + zero-shot |
 
 (repo 루트의 `run_pipeline.sh`가 이 세 단계를 체인으로 실행.)
@@ -42,8 +42,8 @@ import된 모듈을 `sys.modules`에서 캡처(동적 ground truth):
 ### 핵심 파이프라인 (세 단계 전부)
 | 파일 | 용도 |
 |---|---|
-| `src/training/alignment_trainer.py` | 허브: `prepare_features`(데이터) + `_train_layer_pair`(학습) + eval 메서드 |
-| `src/training/base_trainer.py` | Trainer 베이스 (device, wandb init, lr finder) |
+| `src/training/trainers/alignment_trainer.py` | 허브: `prepare_features`(데이터) + `_train_layer_pair`(학습) + eval 메서드 |
+| `src/training/trainers/base_trainer.py` | Trainer 베이스 (device, wandb init, lr finder) |
 | `src/features/feature_store.py` | 캐시 경로 / 로드(mmap) / 추출 / dedup — extract·train·eval |
 | `src/features/feature_spec.py` | `token_level` 정책 중앙화 (suffix / pool / layer) |
 | `src/utils/checkpoint.py` | state_dict 직렬화/로드 (학습이 저장, eval이 로드) |
@@ -68,7 +68,7 @@ import된 모듈을 `sys.modules`에서 캡처(동적 ground truth):
 ### 대체 트레이너 (config 분기; extract/train 경로에서만 import)
 | 파일 | 비고 |
 |---|---|
-| `src/training/clip_eval_trainer.py`, `csa_trainer.py` | config `clip:true` / `cca:true`일 때만; PAL 기본은 `AlignmentTrainer` |
+| `src/training/trainers/clip_eval_trainer.py`, `csa_trainer.py` | config `clip:true` / `cca:true`일 때만; PAL 기본은 `AlignmentTrainer` |
 
 ### Datasets / utils / optim
 | 파일 |
@@ -84,7 +84,7 @@ import된 모듈을 `sys.modules`에서 캡처(동적 ground truth):
 | 분류 | 파일 | 실제 성격 |
 |---|---|---|
 | **별도 eval 진입점** (segmentation — 다른 작업) | `src/evaluation/zero_shot_segmentation.py`, `zero_shot_patch_voting.py` | retrieval/zero-shot과 별개인 세그멘테이션 평가 |
-| **별도 학습 진입점** | `src/train_subset.py` | 독립 subset 학습 스크립트 |
+| **별도 학습 진입점** | `src/training/train_subset.py` | 독립 subset 학습 스크립트 |
 | **해석용 스크립트** | `viz/*.py` | repo 루트의 독립 figure/분석 스크립트. `src`를 라이브러리로 import; 파이프라인이 로드하지 않음 |
 
 ### 정리 과정에서 제거됨 (트리에 더 이상 없음)

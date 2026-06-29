@@ -24,9 +24,9 @@ from src.alignment.alignment_factory import AlignmentFactory
 from src.utils.checkpoint import serialize_alignment_layer
 from src.utils.feature_spec import FeatureSpec
 from src.utils.feature_store import FeatureStore
-from src.core.src.optimizers.utils import get_optimizer_type
-from src.core.src.utils.plotting import embedding_plot, embedding_plot_w_markers
-from src.core.src.utils.utils import EarlyStopping, clip_gradients, save_checkpoint
+from src.utils.optim.optimizer import get_optimizer_type
+from src.utils.plotting import embedding_plot, embedding_plot_w_markers
+from src.utils.train_utils import EarlyStopping, clip_gradients, save_checkpoint
 from src.data.data_utils import (
     FeatureDataset,
     get_meta_dict,

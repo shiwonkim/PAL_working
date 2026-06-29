@@ -79,7 +79,7 @@ from torchvision.datasets import VOCSegmentation
 from torchvision.models.feature_extraction import create_feature_extractor
 from tqdm import tqdm
 
-from src.core.src.utils.loader import Loader, merge_dicts
+from src.utils.loader import Loader, merge_dicts
 from src.data.data_utils import _ensure_rgb_image
 from src.evaluation.consts import DATASETS_TO_TEMPLATES
 from src.evaluation.zero_shot_classifier import build_zero_shot_classifier

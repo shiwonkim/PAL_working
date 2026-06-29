@@ -12,7 +12,7 @@ from loguru import logger
 from matplotlib.ticker import LogLocator
 from torch.utils.data import DataLoader
 
-from src.core.src.utils.utils import fix_random_seeds
+from src.utils.train_utils import fix_random_seeds
 
 
 class Trainer(ABC, object):

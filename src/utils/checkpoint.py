@@ -1,9 +1,8 @@
 """(De)serialization of alignment layers for state_dict-based checkpoints.
 
-Old checkpoints stored the whole pickled ``nn.Module`` under
-``ckpt["alignment_image"]`` / ``ckpt["alignment_text"]``. That requires
-``torch.load(weights_only=False)`` and breaks the moment a layer class is renamed
-or moved (goal 2 of the refactor). The new format stores a self-describing dict::
+Alignment checkpoints store a self-describing dict (not a pickled ``nn.Module``),
+so the module is rebuilt through ``AlignmentFactory`` and loaded via
+``load_state_dict`` — robust to the layer class being renamed or moved::
 
     {
         "format":     "alignment_state_dict_v1",
@@ -14,10 +13,11 @@ or moved (goal 2 of the refactor). The new format stores a self-describing dict:
         "state_dict": OrderedDict(...),
     }
 
-so the module is rebuilt through ``AlignmentFactory`` and loaded via
-``load_state_dict``. ``load_alignment_layer`` reads BOTH formats during the
-transition; the legacy branch is isolated and will be removed once every
-checkpoint has been migrated (see ``scripts/migrate_checkpoints.py``).
+Legacy pickled-module checkpoints (pre-refactor) are NOT supported here — load
+those with the original pre-refactor code. The one-off migration tooling and the
+BridgeAnchor->PAL class-name aliasing it needed have been removed now that every
+checkpoint in use is new-format with the current PAL names; see git history if
+an old pickled checkpoint ever needs converting again.
 """
 
 from __future__ import annotations
@@ -26,21 +26,10 @@ from typing import Any, Mapping, Optional
 
 import torch
 import torch.nn as nn
-from loguru import logger
 
 from src.models.alignment.alignment_factory import AlignmentFactory
 
 ALIGNMENT_FORMAT = "alignment_state_dict_v1"
-
-# Class-name aliases for checkpoints saved before the BridgeAnchor → PAL rename
-# and before the CLS/token PAL classes were merged into one PALAlignmentLayer.
-# Lets older new-format checkpoints keep loading; drop once all checkpoints store
-# the current PAL name.
-CLASS_NAME_ALIASES = {
-    "BridgeAnchorAlignmentLayer": "PALAlignmentLayer",
-    "BridgeAnchorTokenAlignmentLayer": "PALAlignmentLayer",
-    "PALTokenAlignmentLayer": "PALAlignmentLayer",
-}
 
 
 def serialize_alignment_layer(
@@ -76,33 +65,26 @@ def load_alignment_layer(
     modality: str,
     device: str | torch.device = "cpu",
 ) -> nn.Module:
-    """Rebuild an alignment layer from a checkpoint entry.
+    """Rebuild an alignment layer from a new-format checkpoint entry.
 
-    Handles both the new state_dict format and the legacy pickled module.
     ``modality`` ("image"/"text") is applied via ``set_modality`` when the layer
-    supports it, matching how the trainer builds layers.
+    supports it, matching how the trainer builds layers. Legacy pickled-module
+    checkpoints are not supported — load them with the pre-refactor code.
     """
-    if is_new_format(entry):
-        class_name = CLASS_NAME_ALIASES.get(entry["class_name"], entry["class_name"])
-        module = AlignmentFactory.create(
-            class_name,
-            input_dim=entry["input_dim"],
-            **entry["kwargs"],
-        ).float()
-        # set_modality must run before load_state_dict so the parameter
-        # structure matches what was saved (FreezeAlign/SAIL select submodules).
-        if hasattr(module, "set_modality"):
-            module.set_modality(entry.get("modality") or modality)
-        module.load_state_dict(entry["state_dict"])
-    else:
-        # LEGACY: pickled nn.Module from torch.save(model). Remove this branch
-        # once every checkpoint has been migrated to the new format.
-        logger.warning(
-            "Loading a LEGACY pickled-module alignment checkpoint. Migrate it with "
-            "scripts/migrate_checkpoints.py; this code path will be removed."
+    if not is_new_format(entry):
+        raise ValueError(
+            "Not a new-format alignment checkpoint (expected a dict with "
+            f"format={ALIGNMENT_FORMAT!r}). Legacy pickled-module checkpoints are "
+            "no longer supported here; load them with the original pre-refactor code."
         )
-        module = entry
-        if hasattr(module, "set_modality"):
-            module.set_modality(modality)
-
+    module = AlignmentFactory.create(
+        entry["class_name"],
+        input_dim=entry["input_dim"],
+        **entry["kwargs"],
+    ).float()
+    # set_modality must run before load_state_dict so the parameter structure
+    # matches what was saved (FreezeAlign/SAIL select submodules).
+    if hasattr(module, "set_modality"):
+        module.set_modality(entry.get("modality") or modality)
+    module.load_state_dict(entry["state_dict"])
     return module.to(device).eval()

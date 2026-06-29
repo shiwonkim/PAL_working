@@ -15,7 +15,7 @@ import torch.nn.functional as F
 import yaml
 from PIL import Image
 
-from src.core.src.utils.loader import Loader, merge_dicts
+from src.utils.loader import Loader, merge_dicts
 from src.evaluation.zero_shot_segmentation import (
     DatasetSpec,
     build_language_encoder,

@@ -1,17 +1,17 @@
-"""Render grids for N random COCO val samples using the script's own
-anchor-selection heuristic (focused / diverse / consistent).
+"""Batch-render grid figures for every pair listed in a finder JSON.
 
-Each sample's 3 anchors are picked by select_top_anchors() in
-anchor_cross_modal.py — independent per sample, no group constraint, no
-cross-sample anchor sharing.
+Reads the metadata JSON produced by anchor_pair_finder.py and produces one
+PNG (and PDF) per pair using anchor_cross_modal.plot_cross_modal_grid.
+
+Forwards each unique image at most once (cache keyed by (path, caption)).
 
 Usage:
-    CUDA_VISIBLE_DEVICES=0 PYTHONPATH=. python scripts/viz/anchor_random_focused.py \
+    CUDA_VISIBLE_DEVICES=0 PYTHONPATH=. python scripts/viz/anchor_pair_grid_batch.py \
         --config configs/pal/vitl_roberta/token_k512.yaml \
-        --ckpt 'serverB/.../checkpoint-epoch373.pth' \
+        --ckpt 'serverB/results/.../checkpoint-epoch373.pth' \
+        --metadata drafts/figures/anchor_pair_candidates.json \
         --layer-img 23 --layer-txt 24 --gpu 0 \
-        --n-samples 10 --n-anchors 3 --strategy focused \
-        --out-dir drafts/figures/random_focused
+        --out-dir drafts/figures/pair_grids
 """
 import argparse
 import json
@@ -28,36 +28,31 @@ from timm import create_model
 from timm.data import resolve_data_config
 from torchvision.models.feature_extraction import create_feature_extractor
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.alignment import *  # noqa: F401,F403
-from src.core.src.utils.loader import Loader, merge_dicts
-from src.models.text.models import load_llm, load_tokenizer
-from scripts.viz.anchor_cross_modal import (
+from src.models.alignment import *  # noqa: F401,F403
+from src.utils.loader import Loader, merge_dicts
+from src.models.encoders.text_models import load_llm, load_tokenizer
+from viz.anchor_cross_modal import (
     _ensure_rgb,
     get_image_anchor_attention,
     get_text_anchor_attention,
     plot_cross_modal_grid,
-    select_top_anchors,
 )
-from scripts.viz.anchor_pair_finder import load_dataset_pool
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--config", required=True)
     p.add_argument("--ckpt", required=True)
+    p.add_argument("--metadata", required=True,
+                   help="JSON from anchor_pair_finder.py")
     p.add_argument("--layer-img", type=int, default=23)
     p.add_argument("--layer-txt", type=int, default=24)
     p.add_argument("--gpu", type=int, default=0)
-    p.add_argument("--n-samples", type=int, default=10)
-    p.add_argument("--n-anchors", type=int, default=3)
-    p.add_argument("--strategy",
-                   choices=["focused", "diverse", "consistent"],
-                   default="focused")
-    p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--dataset", choices=["coco", "flickr30"], default="flickr30")
-    p.add_argument("--out-dir", default="drafts/figures/random_focused")
+    p.add_argument("--n-pairs", type=int, default=None,
+                   help="Limit to first N pairs (default: all)")
+    p.add_argument("--out-dir", default="drafts/figures/pair_grids")
     args = p.parse_args()
 
     device = torch.device(f"cuda:{args.gpu}")
@@ -94,49 +89,56 @@ def main():
     language_model = load_llm(llm_name).to(device)
     tokenizer = load_tokenizer(llm_name)
 
-    pool = load_dataset_pool(args.dataset, args.n_samples, seed=args.seed)
-    print(f"[pool] {len(pool)} {args.dataset} samples (strategy={args.strategy})")
+    with open(args.metadata) as f:
+        meta = json.load(f)
+    if args.n_pairs is not None:
+        meta = meta[: args.n_pairs]
+    print(f"[meta] rendering {len(meta)} pairs")
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    meta_out = []
-    t0 = time.time()
-    for r, s in enumerate(pool):
-        pil = Image.open(s["path"]).convert("RGB")
+    cache = {}
+
+    def get_sample(path, caption):
+        key = (path, caption)
+        if key in cache:
+            return cache[key]
+        pil = Image.open(path).convert("RGB")
         img_attn, _ = get_image_anchor_attention(
             pil, vision_model, image_transform, alignment_image,
             args.layer_img, device,
         )
         txt_attn, _, token_strs, _ = get_text_anchor_attention(
-            s["caption"], tokenizer, language_model, alignment_text,
+            caption, tokenizer, language_model, alignment_text,
             args.layer_txt, device,
         )
-        anchors = select_top_anchors(
-            img_attn, txt_attn, n=args.n_anchors, strategy=args.strategy,
-        )
-        sample_for_grid = [{
-            "image": pil, "caption": s["caption"],
-            "img_attn": img_attn, "txt_attn": txt_attn,
-            "token_strs": token_strs, "anchor_indices": anchors,
-        }]
-        anchor_str = "-".join(str(a) for a in anchors)
+        cache[key] = (pil, img_attn, txt_attn, token_strs)
+        return cache[key]
+
+    t0 = time.time()
+    for r, p in enumerate(meta):
+        pil_i, ia_i, ta_i, tok_i = get_sample(p["path_i"], p["caption_i"])
+        pil_j, ia_j, ta_j, tok_j = get_sample(p["path_j"], p["caption_j"])
+
+        pair_samples = [
+            {"image": pil_i, "caption": p["caption_i"],
+             "img_attn": ia_i, "txt_attn": ta_i,
+             "token_strs": tok_i, "anchor_indices": p["anchors"]},
+            {"image": pil_j, "caption": p["caption_j"],
+             "img_attn": ia_j, "txt_attn": ta_j,
+             "token_strs": tok_j, "anchor_indices": p["anchors"]},
+        ]
+        anchor_str = "-".join(str(a) for a in p["anchors"])
         out_path = out_dir / (
-            f"sample_{r + 1:02d}_idx{s['idx']}_a{anchor_str}.png"
+            f"pair_{r + 1:02d}_score{p['score']:.3f}"
+            f"_idx{p['image_idx_i']}-{p['image_idx_j']}"
+            f"_a{anchor_str}.png"
         )
-        plot_cross_modal_grid(sample_for_grid, str(out_path))
-        meta_out.append({
-            "rank": r + 1,
-            "image_idx": s["idx"],
-            "image_id": s["image_id"],
-            "path": s["path"],
-            "caption": s["caption"],
-            "anchors": anchors,
-        })
-    print(f"[done] {len(pool)} grids in {time.time() - t0:.1f}s")
-    with open(out_dir / "matches.json", "w") as f:
-        json.dump(meta_out, f, indent=2)
-    print(f"[meta] {out_dir / 'matches.json'}")
+        plot_cross_modal_grid(pair_samples, str(out_path))
+
+    print(f"[done] {len(meta)} pairs in {time.time() - t0:.1f}s")
+    print(f"[out]  {out_dir}/")
 
 
 if __name__ == "__main__":

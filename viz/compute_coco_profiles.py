@@ -16,11 +16,11 @@ import torch.nn.functional as F
 from PIL import Image
 from tqdm import tqdm
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.alignment import *  # noqa
-from src.core.src.utils.loader import Loader, merge_dicts
-from src.models.text.models import load_llm, load_tokenizer
+from src.models.alignment import *  # noqa
+from src.utils.loader import Loader, merge_dicts
+from src.models.encoders.text_models import load_llm, load_tokenizer
 from timm import create_model
 from timm.data import resolve_data_config
 from torchvision.models.feature_extraction import create_feature_extractor

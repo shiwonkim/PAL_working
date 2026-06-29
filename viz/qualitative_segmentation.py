@@ -30,7 +30,7 @@ from loguru import logger
 from PIL import Image
 from torchvision.datasets import VOCSegmentation
 
-from scripts.viz.viz_utils import (
+from viz.viz_utils import (
     DatasetSpec,
     build_text_features,
     extract_patch_features,

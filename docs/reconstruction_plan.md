@@ -1,213 +1,125 @@
-# src/ 디렉토리 전면 재구성 계획 (한글)
+# src/ 디렉토리 재구성 — 진행 현황 & 계획 (한글)
 
-> 작성: 2026-06-26 (HEAD `6908947`). **계획 문서** — 아직 실행 안 함.
+> 최종 갱신: 2026-06-29 (HEAD `4a4c575`). 대부분 완료, 일부 남음.
 > 목적: `src/` 디렉토리 이름이 역할을 직관적으로 드러내도록 재배치.
 
 ---
 
-## 1. 왜 재구성하나 — 현재 구조의 3가지 문제
+## 1. 재구성 동기 (원래 문제 3가지)
 
 1. **진입점이 src/ 루트에 라이브러리와 섞여 흩어짐**
-   `extract_features.py` / `train.py` / `train_alignment.py` / `train_subset.py` /
-   `measure_alignment.py`가 `alignment/` · `trainers/` 같은 디렉토리와 같은 레벨.
-   "실행하는 것"과 "import되는 것"이 안 구분됨.
-
-2. **`core/src/` 중첩 — vendoring 흔적**
-   `src/core/src/datasets/...`, `src/core/src/utils/...` 처럼 "src 안의 core 안의
-   src". 원본 레포를 통째 복사한 자국. `utils`가 두 곳, 데이터셋도 두 곳으로 갈림.
-
-3. **데이터 관련이 두 디렉토리로 분산**
-   `dataset_preparation/`(준비 스크립트 + `data_utils.py`) vs
-   `core/src/datasets/`(실제 Dataset 클래스). "데이터 코드 어디?"가 두 곳.
+2. **`core/src/` 중첩** — 원본 레포 vendoring 흔적 (utils·datasets 중복)
+3. **데이터 관련이 두 디렉토리로 분산** (+ utils 잡탕)
 
 ---
 
-## 2. 불변 조건 (재구성이 절대 깨면 안 되는 것)
-
-체크포인트 로드 메커니즘을 확인한 결과(아래), 디렉토리 이동은 **안전**하되 2가지를
-지켜야 한다:
-
-- **체크포인트는 클래스 이름(`class_name`) 문자열로 로드된다.** `checkpoint.py`의
-  `load_alignment_layer` → `AlignmentFactory.create("PALAlignmentLayer", ...)`.
-  모듈 경로를 저장하지 않으므로 **파일을 옮겨도 기존 .pth 로드는 안 깨진다.**
-  (firefly·galaxy 체크포인트 둘 다 new-format, `class_name="PALAlignmentLayer"` 확인함.)
-  → **불변조건 ①: 클래스 이름을 바꾸지 말 것** (`PALAlignmentLayer` 등 유지).
-- factory 등록은 `alignment/__init__.py`의 `initialize_package_factory(__file__)`가
-  **자기 디렉토리를 스캔**해서 `@register`로 한다.
-  → **불변조건 ②: alignment 레이어들은 한 디렉토리에 모아두고, 그 디렉토리
-  `__init__.py`가 `initialize_package_factory`를 호출하게 유지** (흩뜨리면 등록이 깨짐).
-  디렉토리째 옮기는 건 OK, 안에서 흩어놓는 건 금지.
-
----
-
-## 3. 목표 디렉토리 구조
+## 2. 현재 구조 (2026-06-29 기준, 실제)
 
 ```
 src/
-  cli/          진입점(실행 스크립트)만
-  data/         Dataset 클래스 + get_datasets + (prepare 스크립트는 서브로 격리)
-  encoders/     인코더 로더 (LLM 등)
-  alignment/    PAL 등 정렬 레이어 (그대로 — 불변조건 ②)
-  features/     feature_store + feature_spec (추출/캐시 — 파이프라인 핵심)
-  training/     trainers + loss + measure_alignment + optimizers
-  evaluation/   retrieval + zero_shot (+ segmentation은 서브로)
-  utils/        진짜 공용 유틸 + config 로더 + 체크포인트 + factory 인프라
+  datasets/     Dataset 클래스(coco/flickr/image_text/base) + data_utils
+  features/     feature_store + feature_spec           (추출/캐시 파이프라인)
+  models/
+    encoders/   text_models + vision_models            (frozen 인코더)
+    alignment/  pal + *_layer + alignment_factory + __init__(factory 초기화)
+  training/
+    base_trainer + alignment_trainer + clip_eval_trainer + csa_trainer
+    loss/       clip_loss + siglip_loss
+    optim/      optimizer + lars
+  evaluation/   retrieval + zero_shot_classifier/consts + zero_shot_segmentation/patch_voting
+  utils/        checkpoint, loader, metrics, plotting, base_factory, load_modules,
+                measure_alignment, utils, train_utils
+  (진입점, src 직속)  extract_features.py, train.py, train_alignment.py, train_subset.py
+  (루트)             rerun_eval.py
 ```
 
-원칙: **디렉토리 이름이 곧 역할**. "유틸"에 섞여있던 파이프라인 핵심(`feature_store`)을
-`features/`로 올리고, 중첩된 `core/src/`를 평탄화한다.
+---
+
+## 3. 완료된 재구성 (커밋 순)
+
+| 커밋 | 내용 |
+|---|---|
+| `e13e2ff` | `models/text/models.py` → `encoders/`(text+vision 대칭); `get_lvm` 본문을 `vision_models.load_lvm`으로 분리 |
+| `de4659d` | datasets → `src/data/`(나중에 datasets) + 일회성 `prepare_*`/`vissl_download` 삭제 |
+| `658256e` | `core/src/` 평탄화 → `utils/`(loader, plotting, train_utils) + `utils/optim/`. **src/core 완전 제거** |
+| `4753c9c` | trainers + loss + optim + measure_alignment → `training/` |
+| `763f2f8` | encoders + alignment → `models/` 하위로 묶음 |
+| `5ba37dd` | measure_alignment → `training/`에서 다시 `utils/`로 |
+| `2a5c064` | feature_store + feature_spec → `src/features/`로 분리 (utils 밖) |
+| `4a4c575` | `src/data/` → `src/datasets/` 개명 (루트 `data/` 심볼릭과 혼동 회피) |
+
+곁다리 정리(별도 커밋): lint 세트 제거(`958f998`), deepspeed dead 의존 제거(`ce335d0`),
+pyproject/.gitattributes 제거(`adaf503`), Platonic-benchmark dead 코드 제거(`75481ab`),
+`extract.py`→`extract_features.py` 개명(`cff92c8`), `paths.py` 삭제(`6908947`).
 
 ---
 
-## 4. 파일별 이동 매핑
+## 4. 원래 계획 대비 바뀐 결정 (중요)
 
-### cli/  (진입점)
-| 현재 | → 목표 |
-|---|---|
-| `src/extract_features.py` | `src/cli/extract_features.py` |
-| `src/train.py` | `src/cli/train.py` |
-| `src/train_alignment.py` | `src/cli/train_alignment.py` |
-| `src/train_subset.py` | `src/cli/train_subset.py` |
-| (루트) `rerun_eval.py` | 그대로 두거나 `src/cli/eval.py`로 (논의) |
-
-> 주의: 진입점은 `python -m src.cli.train_alignment`처럼 호출이 바뀜 →
-> `scripts/run_pipeline.sh`, `feature_store.py` 에러 메시지, docs 전부 갱신.
-
-### data/  (데이터)
-| 현재 | → 목표 |
-|---|---|
-| `src/core/src/datasets/base_dataset.py` | `src/data/base_dataset.py` |
-| `src/core/src/datasets/image_text_dataset.py` | `src/data/image_text_dataset.py` |
-| `src/core/src/datasets/downstream_tasks/coco_dataset.py` | `src/data/coco_dataset.py` |
-| `src/core/src/datasets/downstream_tasks/flickr30k_dataset.py` | `src/data/flickr30k_dataset.py` |
-| `src/dataset_preparation/data_utils.py` | `src/data/data_utils.py` |
-| `src/dataset_preparation/prepare_*.py`, `vissl_download.py` | `src/data/prepare/` (일회성 스크립트 격리) |
-
-### encoders/
-| 현재 | → 목표 |
-|---|---|
-| `src/models/text/models.py` | `src/encoders/text_models.py` (평탄화) |
-
-### features/
-| 현재 | → 목표 |
-|---|---|
-| `src/utils/feature_store.py` | `src/features/feature_store.py` |
-| `src/utils/feature_spec.py` | `src/features/feature_spec.py` |
-
-### training/
-| 현재 | → 목표 |
-|---|---|
-| `src/trainers/alignment_trainer.py` | `src/training/alignment_trainer.py` |
-| `src/trainers/base_trainer.py` | `src/training/base_trainer.py` |
-| `src/trainers/clip_eval_trainer.py` | `src/training/clip_eval_trainer.py` |
-| `src/trainers/csa_trainer.py` | `src/training/csa_trainer.py` |
-| `src/loss/clip_loss.py`, `siglip_loss.py` | `src/training/loss/` (서브로) — 또는 loss/ 독립 유지 (논의) |
-| `src/measure_alignment.py` | `src/training/measure_alignment.py` (compute_score) |
-| `src/core/src/optimizers/lars.py`, `utils.py` | `src/training/optimizers/` |
-
-### evaluation/  (대부분 그대로)
-| 현재 | → 목표 |
-|---|---|
-| `src/evaluation/retrieval.py`, `zero_shot_classifier.py`, `consts.py` | `src/evaluation/` (유지) |
-| `src/evaluation/zero_shot_segmentation.py`, `zero_shot_patch_voting.py` | `src/evaluation/segmentation/` (서브로 격리) |
-
-### alignment/  (그대로 — 불변조건 ②)
-`alignment_factory.py`, `base_alignment_layer.py`, `pal.py`,
-`linear_alignment_layer.py`, `mlp_alignment_layer.py`, `freeze_align.py`,
-`sail_star_mlp.py`, `cca_class.py`, `__init__.py` → **이동 없음**.
-
-### utils/  (공용만)
-| 현재 | → 목표 |
-|---|---|
-| `src/utils/checkpoint.py` | `src/utils/checkpoint.py` (유지) |
-| `src/utils/base_factory.py`, `load_modules.py` | `src/utils/` (유지 — factory 인프라) |
-| `src/utils/metrics.py` | `src/utils/metrics.py` (유지) |
-| `src/utils/utils.py` | `src/utils/utils.py` (유지, 공용 헬퍼) |
-| `src/core/src/utils/loader.py` | `src/utils/loader.py` (config yaml 로더) |
-| `src/core/src/utils/plotting.py` | `src/utils/plotting.py` |
-| `src/core/src/utils/utils.py` | `src/utils/dist_utils.py` (이름 바꿔 충돌 회피 — 아래 주의) |
-
-### 삭제될 빈 껍데기
-`src/core/`, `src/core/src/`, `src/models/`, `src/dataset_preparation/`,
-`src/trainers/`, `src/loss/` 등은 내용이 빠지면 `__init__.py`만 남으므로 제거.
+| 항목 | 원래 계획 | 실제 결정 | 이유 |
+|---|---|---|---|
+| 인코더/정렬레이어 | `encoders/`, `alignment/` 각 1급 | **`models/{encoders,alignment}`** 로 묶음 | "신경망 = models" 응집 (사용자 선호) |
+| 진입점 | `src/cli/`로 모으기 | **src/ 직속 유지** | 사용자가 cli/ 하위 원치 않음 (나중 개명만) |
+| 데이터 디렉토리 | `src/data/` | **`src/datasets/`** | 루트 `data/`(심볼릭=실제 데이터)와 단어 충돌 |
+| measure_alignment | `training/` | **`utils/`** | compute_score가 metrics 위 얇은 래퍼라 utils 성격 |
+| loss/optim 위치 | (미정) | **`training/loss`, `training/optim`** | 학습 관련 = training 한 곳 |
+| core utils.py | `dist_utils.py` | **`train_utils.py`** | 내용이 학습 인프라(clip_gradients/EarlyStopping/분산) |
 
 ---
 
-## 5. 주의 / 결정 포인트 (실행 전 정할 것)
+## 5. 불변 조건 (재구성이 절대 깨면 안 됨) — 전부 유지됨
 
-1. **`utils.py` 이름 충돌** — `src/utils/utils.py`와 `src/core/src/utils/utils.py`는
-   **다른 파일인데 함수명이 겹친다**(`set_requires_grad`, `has_batchnorms`가 양쪽에).
-   → 단순 통합 불가. core쪽을 `src/utils/dist_utils.py`(분산학습/`clip_gradients`/
-   `EarlyStopping`/`save_checkpoint` 등)로 **이름 바꿔 분리**하는 안을 제안.
-   (참고: `src/utils/utils.py`의 `set_requires_grad`/`has_batchnorms`는 dead라 별도
-   정리하면 충돌 자체가 사라짐.)
-2. **`loss/`를 `training/` 안에 넣을지 독립 유지할지** — 직관상 둘 다 가능. 제안은
-   `training/loss/` 서브.
-3. **`rerun_eval.py`(루트)를 `src/cli/eval.py`로 옮길지** — 루트 유지도 가능.
-4. **`measure_alignment.py`** — 이제 `compute_score`(layer selection) 한 함수뿐이라,
-   `training/`에 두거나 아예 `training/layer_selection.py`로 이름을 바꾸는 것도 고려.
-5. **`prepare_*` 스크립트** — 대부분 일회성/미사용. `data/prepare/`로 격리하되 추후
-   별도 정리(삭제) 대상.
+- **체크포인트는 `class_name` 문자열로 로드** (`checkpoint.load_alignment_layer` →
+  `AlignmentFactory.create("PALAlignmentLayer")`). 모듈 경로 비의존 → 디렉토리 이동 안전.
+  (models/ 이동 시 firefly forward sum=89.591690 동일 확인.)
+- **factory 등록**: `models/alignment/__init__.py`의 `initialize_package_factory(__file__)`가
+  자기 디렉토리를 스캔(`__file__` 기준 상대경로). alignment 레이어는 한 디렉토리에 모여 있어야 함.
+- **클래스 이름 불변** (`PALAlignmentLayer` 등).
 
 ---
 
-## 6. import 경로 갱신 전략
+## 6. 검증 방법 (매 단계 반복)
 
-- 모든 `from src.X import` / `import src.X`를 새 경로로 일괄 치환 (grep + sed).
-- 규모: `src.core.src` 참조만 11개 파일 ~15곳 + 나머지. 단계별로 그 단계의 경로만 갱신.
-- **클래스 이름은 절대 안 바꿈**(불변조건 ①). 디렉토리/모듈 경로만 변경.
-- `alignment/__init__.py`의 factory 초기화는 그대로(불변조건 ②).
-
----
-
-## 7. 단계별 실행 계획 (위험 낮은 것부터, 각 단계 독립 커밋 + 검증)
-
-각 단계 후 **반드시 검증**:
-- smoke token (`smoke_state_dict.yaml`) → loss 3.0001
-- smoke CLS unpinned (`smoke_cls_unpinned.yaml`) → (11,6) 0.3545 / 4.0650
-- firefly·galaxy 체크포인트 로드 (rerun_eval 또는 load_alignment_layer 직접)
-
-| 단계 | 내용 | 비고 |
-|---|---|---|
-| **1** | `core/src/` 평탄화 → `data/`, `utils/`(loader/plotting/dist_utils), `training/optimizers/` | vendoring 중첩 제거, 가장 명백 |
-| **2** | 진입점 → `src/cli/` | 호출 경로 변경 (run_pipeline.sh, 에러메시지, docs) |
-| **3** | `feature_store`/`feature_spec` → `src/features/` | utils에서 핵심 분리 |
-| **4** | `trainers`+`loss`+`measure_alignment` → `src/training/` | |
-| **5** | `models` → `encoders/`, `dataset_preparation` → `data/` 통합, evaluation 서브정리 | 마무리 |
+- token smoke: `smoke_state_dict.yaml` → loss **3.0001** / val 5.7733
+- CLS unpinned: `smoke_cls_unpinned.yaml` → 레이어 쌍 **(11,6)** score **0.3545** / loss 4.0650
+  (compute_score = layer selection 경로 커버)
+- (디렉토리/체크포인트 위험 시) firefly/galaxy 로드 + forward 값 비교
+- (인코더 로더 변경 시) 캐시 비우고 extract → vision feature MD5 비교
+- smoke 검증 config(`smoke_cls*.yaml`, `smoke_eval.yaml`)는 gitignore된 로컬 스크래치.
 
 ---
 
-## 8. 위험 / 롤백
+## 7. 남은 항목
 
-- **위험**: import 경로 광범위 변경 → 한 곳 빠뜨리면 ImportError. 각 단계 `python -c
-  "import ..."` + smoke로 즉시 검출.
-- **체크포인트**: class_name 기반이라 안전하지만, 각 단계에서 firefly/galaxy 로드를
-  실제로 한 번 돌려 확인 (verify-before-claiming).
-- **롤백**: 각 단계가 독립 커밋이므로 문제 시 해당 커밋만 revert.
-- **원본 STRUCTURE와의 diff**: 이 repo는 code-only refactor copy라 구조 변경 OK.
-  단 논문 리비전에서 원본과 대조 시 diff가 커진다는 점 인지.
+1. **진입점 개명** (사용자 합의: src 직속 유지, 이름만) — 예:
+   `extract_features.py`→`extract_feats.py`, `rerun_eval.py`→`src/eval.py`,
+   `train_alignment.py`/`train_subset.py` 정리. (호출 경로 `python -m src.X` + run_pipeline.sh +
+   feature_store 에러메시지 + docs 갱신 필요)
+2. **`utils/utils.py` dead 함수 정리** — `set_seeds`, `walk_and_collect`, `set_requires_grad`,
+   `has_batchnorms`, `get_available_torch_device` (정의만, 미사용; `set_requires_grad`/
+   `has_batchnorms`는 train_utils에도 동일 기능 존재).
+3. **`scripts/` 정리** (다음 작업 예정).
+4. (선택) factory 인프라(`base_factory`+`load_modules`)를 `utils/factory/` 서브로.
 
 ---
 
-## 부록: 현재 → 목표 한눈에
+## 8. 한눈 매핑 (옛 → 현재)
 
 ```
-현재                          목표
-src/extract_features.py    → src/cli/extract_features.py
-src/train*.py              → src/cli/train*.py
-src/measure_alignment.py   → src/training/measure_alignment.py
-src/core/src/datasets/*    → src/data/*
-src/core/src/optimizers/*  → src/training/optimizers/*
-src/core/src/utils/loader  → src/utils/loader.py
-src/core/src/utils/plotting→ src/utils/plotting.py
-src/core/src/utils/utils   → src/utils/dist_utils.py (rename)
-src/dataset_preparation/*  → src/data/ (+ data/prepare/)
-src/models/text/models.py  → src/encoders/text_models.py
-src/utils/feature_store    → src/features/feature_store.py
-src/utils/feature_spec     → src/features/feature_spec.py
-src/trainers/*             → src/training/*
-src/loss/*                 → src/training/loss/*
-src/alignment/*            → (그대로)
-src/evaluation/*           → src/evaluation/ (+ segmentation/ 서브)
-src/utils/{checkpoint,base_factory,load_modules,metrics,utils} → (그대로)
+src/models/text/models.py        → src/models/encoders/text_models.py
+(FeatureStore.get_lvm 본문)       → src/models/encoders/vision_models.py:load_lvm
+src/core/src/datasets/*          → src/datasets/*
+src/dataset_preparation/data_utils → src/datasets/data_utils.py
+src/dataset_preparation/prepare_* → (삭제)
+src/core/src/utils/loader        → src/utils/loader.py
+src/core/src/utils/plotting      → src/utils/plotting.py
+src/core/src/utils/utils         → src/utils/train_utils.py
+src/core/src/optimizers/{utils,lars} → src/training/optim/{optimizer,lars}.py
+src/trainers/*                   → src/training/*
+src/loss/*                       → src/training/loss/*
+src/measure_alignment.py         → src/utils/measure_alignment.py
+src/utils/feature_store|feature_spec → src/features/*
+src/alignment/*                  → src/models/alignment/*
+src/encoders/*                   → src/models/encoders/*
+src/utils/paths.py               → (삭제)
 ```

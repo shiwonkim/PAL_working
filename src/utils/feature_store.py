@@ -30,7 +30,7 @@ from loguru import logger
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.core.src.datasets.downstream_tasks.coco_dataset import LoadingType
+from src.data.coco_dataset import LoadingType
 from src.encoders.text_models import load_llm, load_tokenizer
 from src.encoders.vision_models import load_lvm
 from src.utils.utils import set_transform_dataset

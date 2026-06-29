@@ -14,9 +14,9 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import CLIPModel, CLIPProcessor
 
-from src.core.src.datasets.image_text_dataset import ImageTextDataset
+from src.data.image_text_dataset import ImageTextDataset
 from src.core.src.utils.plotting import embedding_plot_w_markers
-from src.dataset_preparation.data_utils import FeatureDataset, get_meta_dict
+from src.data.data_utils import FeatureDataset, get_meta_dict
 from src.evaluation.consts import (
     DATASETS_TO_CLASSES,
     DATASETS_TO_TEMPLATES,

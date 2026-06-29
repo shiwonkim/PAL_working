@@ -1,0 +1,60 @@
+defaults: !include ../default.yaml
+
+# CLS-mode smoke (token_level=false), pinned layers 11/6. Exercises the
+# prepare_features CLS path: real (N, L, D) CLS tensors (not the token None
+# path) -> layer slice -> dedup -> subsample -> _train_layer_pair. Uses the
+# CocoCaptionDataset -cls-r224 / -avg caches symlinked into smoke_results.
+overrides:
+    paths:
+        save_path: "./smoke_results"
+
+    alignment:
+        llm_model_name: "sentence-transformers/all-MiniLM-L6-v2"
+        lvm_model_name: "vit_small_patch14_dinov2.lvd142m"
+
+    features:
+        dataset: "coco"
+        batch_size: 64
+        num_workers: 4
+        img_size: 224
+        layer_img: 11
+        layer_txt: 6
+
+    training:
+        token_level: false
+
+        n_epochs: 2
+        batch_size: 256
+        use_lr_finder: false
+        early_stopping: false
+        wandb_watch: false
+        visualize_original_embeddings: false
+        log_structural_preservation: false
+
+        n_random_subsample_train: 2000
+        n_random_subsample_val: 1000
+
+        alignment_layer_name: "PALAlignmentLayer"
+        alignment_layer_kwargs:
+            num_anchors: 128
+            pool_temperature: 0.03
+            projector_dim: 0
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 10
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+        scheduler_name: "CosineAnnealingLR"
+        scheduler_kwargs: {}
+        scheduler_epoch_cycles: 2
+
+    evaluation:
+        token_level_zero_shot: false
+        zero_shot_datasets: []
+        retrieval_datasets: []

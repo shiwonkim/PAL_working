@@ -14,7 +14,7 @@ import yaml
 from loguru import logger
 
 from src.core.src.utils.loader import Loader, merge_dicts
-from src.dataset_preparation.data_utils import get_datasets, get_default_transforms
+from src.data.data_utils import get_datasets, get_default_transforms
 from src.train_alignment import load_dataset
 from src.trainers.alignment_trainer import AlignmentTrainer
 

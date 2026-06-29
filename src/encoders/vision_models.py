@@ -12,7 +12,7 @@ from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
 from torchvision.models.feature_extraction import create_feature_extractor
 
-from src.dataset_preparation.data_utils import _ensure_rgb_image
+from src.data.data_utils import _ensure_rgb_image
 
 
 def load_lvm(lvm_model_name, img_size=None, device="cpu"):

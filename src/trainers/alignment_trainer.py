@@ -27,7 +27,7 @@ from src.utils.feature_store import FeatureStore
 from src.core.src.optimizers.utils import get_optimizer_type
 from src.core.src.utils.plotting import embedding_plot, embedding_plot_w_markers
 from src.core.src.utils.utils import EarlyStopping, clip_gradients, save_checkpoint
-from src.dataset_preparation.data_utils import (
+from src.data.data_utils import (
     FeatureDataset,
     get_meta_dict,
 )

@@ -327,3 +327,10 @@ verification/
 
 # local verification eval configs (recreated per run, save_path → ./fireflyeval)
 configs/pal/vitl_roberta/*_evallocal.yaml
+
+# Reference papers (copyrighted) and local verification scratch configs
+*.pdf
+/configs/dryrun/smoke_cls.yaml
+/configs/dryrun/smoke_cls_pinned.yaml
+/configs/dryrun/smoke_cls_unpinned.yaml
+/configs/dryrun/smoke_eval.yaml

@@ -112,6 +112,8 @@ class AlignmentTrainer(Trainer):
         )
         self.cache_features = cache_features
         self.print_model_summary = print_model_summary
+        # CLS (2D) vs token (3D/CAP) mode — config flag, read once and reused.
+        self.token_level = bool(self.config["training"].get("token_level", False))
         self.save_path = Path(config["paths"]["save_path"])
         self.llm_model_name = llm_model_name
         self.lvm_model_name = lvm_model_name
@@ -675,7 +677,7 @@ class AlignmentTrainer(Trainer):
         # extraction. Also when token_level=true, skip the CLS pre-load
         # entirely — the token override later in fit() supplies the
         # real tensors and the CLS pre-load is wasted compute.
-        token_level_cfg = bool(self.config["training"].get("token_level", False))
+        token_level_cfg = self.token_level
 
         def _train_dataset_name(loader):
             if hasattr(loader.dataset, "name"):
@@ -1028,9 +1030,7 @@ class AlignmentTrainer(Trainer):
 
         # Token-level override: replace the (N, D) CLS slices with
         # (N, T, D) token features for the selected layer, plus masks.
-        token_level = bool(
-            self.config["training"].get("token_level", False)
-        )
+        token_level = self.token_level
         layer_text_mask_train = None
         layer_text_mask_val = None
         if token_level:
@@ -1289,7 +1289,7 @@ class AlignmentTrainer(Trainer):
         layer_text_mask_val = prepared.text_mask_val
         layer_additional_image_features = prepared.additional_image_features
         layer_additional_text_features = prepared.additional_text_features
-        token_level = bool(self.config["training"].get("token_level", False))
+        token_level = self.token_level
 
         logger.info(
             f"Training alignment for layers {layer_comb} (score: {layer_comb_score:.4f})"

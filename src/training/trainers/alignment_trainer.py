@@ -1534,35 +1534,9 @@ class AlignmentTrainer(Trainer):
             epoch=epoch,
         )
 
-        # evaluate
-        res_dict = {
-            "layer_comb": layer_comb,
-            "layer_comb_alignment": layer_comb_score,
-            "epoch": epoch,
-            "train_step": train_step,
-            "train_loss": train_loss,
-            "val_loss": val_loss,
-        }
-        with torch.no_grad():
-            self.evaluate_retrieval(
-                epoch=epoch,
-                train_step=train_step,
-                alignment_image=alignment_image,
-                alignment_text=alignment_text,
-                alignment_layer_combination=layer_comb,
-                alignment_layer_combination_str=layer_comb_str,
-                additional_result_dict=res_dict,
-            )
-            gc.collect()
-            self.evaluate_zero_shot_classification(
-                epoch=epoch,
-                train_step=train_step,
-                alignment_image=alignment_image,
-                alignment_text=alignment_text,
-                alignment_layer_combination=layer_comb,
-                alignment_layer_combination_str=layer_comb_str,
-                additional_result_dict=res_dict,
-            )
+        # Evaluation (retrieval + zero-shot) is now a separate stage — see
+        # src/eval.py, which loads this checkpoint and runs evaluate_retrieval /
+        # evaluate_zero_shot_classification. Training ends at the saved checkpoint.
 
 
     def train(

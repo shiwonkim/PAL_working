@@ -35,7 +35,7 @@ from torchvision.models.feature_extraction import create_feature_extractor
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.models.alignment import *  # noqa: F401,F403
-from src.utils.loader import Loader, merge_dicts
+from src.utils.yaml_loader import Loader, merge_dicts
 from src.models.encoders.text_models import load_llm, load_tokenizer
 from viz.anchor_cross_modal import (
     _ensure_rgb,

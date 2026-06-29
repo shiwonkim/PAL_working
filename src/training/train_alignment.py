@@ -9,7 +9,7 @@ from loguru import logger
 from torch.utils.data import DataLoader
 
 from src.datasets.image_text_dataset import ImageTextDataset
-from src.utils.loader import Loader, merge_dicts
+from src.utils.yaml_loader import Loader, merge_dicts
 from src.datasets.data_utils import get_datasets, get_default_transforms
 from src.training.trainers.alignment_trainer import AlignmentTrainer
 from src.training.trainers.clip_eval_trainer import CLIPEvalTrainer

@@ -43,7 +43,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.models.alignment import *  # noqa
-from src.utils.loader import Loader, merge_dicts
+from src.utils.yaml_loader import Loader, merge_dicts
 from src.models.encoders.text_models import load_llm, load_tokenizer
 from timm import create_model
 from timm.data import resolve_data_config

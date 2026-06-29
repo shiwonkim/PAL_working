@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from src.models.alignment import *  # noqa: register all alignment layers
 from src.models.alignment.alignment_factory import AlignmentFactory
 from src.utils.loader import Loader, merge_dicts
-from src.data.data_utils import get_datasets
+from src.datasets.data_utils import get_datasets
 from src.evaluation.zero_shot_classifier import build_zero_shot_classifier
 from src.evaluation.consts import DATASETS_TO_CLASSES, DATASETS_TO_TEMPLATES
 from src.models.encoders.text_models import load_llm, load_tokenizer

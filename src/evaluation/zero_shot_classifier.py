@@ -5,7 +5,7 @@ import torch
 from loguru import logger
 from transformers import CLIPModel
 
-from src.data.data_utils import get_meta_dict
+from src.datasets.data_utils import get_meta_dict
 from src.utils.utils import log_spherical_embedding_stats, safe_normalize
 
 

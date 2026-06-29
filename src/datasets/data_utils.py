@@ -9,8 +9,8 @@ import torchvision.transforms as transforms
 from loguru import logger
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, Subset
 
-from src.data.coco_dataset import CocoCaptionDataset
-from src.data.flickr30k_dataset import Flickr30kDataset
+from src.datasets.coco_dataset import CocoCaptionDataset
+from src.datasets.flickr30k_dataset import Flickr30kDataset
 
 IMAGENET_DEFAULT_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_DEFAULT_STD = (0.229, 0.224, 0.225)

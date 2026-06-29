@@ -8,9 +8,9 @@ import yaml
 from loguru import logger
 from torch.utils.data import DataLoader
 
-from src.data.image_text_dataset import ImageTextDataset
+from src.datasets.image_text_dataset import ImageTextDataset
 from src.utils.loader import Loader, merge_dicts
-from src.data.data_utils import get_datasets, get_default_transforms
+from src.datasets.data_utils import get_datasets, get_default_transforms
 from src.training.alignment_trainer import AlignmentTrainer
 from src.training.clip_eval_trainer import CLIPEvalTrainer
 from src.training.csa_trainer import CSATrainer

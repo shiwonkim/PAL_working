@@ -34,9 +34,9 @@ def _safe_to_tensor(pic):
 
 _F.to_tensor = _safe_to_tensor
 
-from src.data.image_text_dataset import ImageTextDataset  # noqa: E402
+from src.datasets.image_text_dataset import ImageTextDataset  # noqa: E402
 from src.utils.loader import Loader, merge_dicts  # noqa: E402
-from src.data.data_utils import (  # noqa: E402
+from src.datasets.data_utils import (  # noqa: E402
     get_datasets,
     get_default_transforms,
 )

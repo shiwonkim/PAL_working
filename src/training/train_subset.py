@@ -18,29 +18,32 @@ from src.datasets.data_utils import get_datasets, get_default_transforms
 from src.train import load_dataset
 from src.training.trainers.alignment_trainer import AlignmentTrainer
 
-parser = argparse.ArgumentParser(
-    description="Data-size sweep for the subsampled Representation Alignment.",
-)
-parser.add_argument(
-    "--config_path",
-    type=str,
-    required=True,
-    help="Path to the config yaml.",
-)
-parser.add_argument(
-    "--samples",
-    type=str,
-    default="1000,5000,10000,50000",
-    help="Comma-separated subsample sizes to sweep (e.g. '10000,50000').",
-)
-parser.add_argument(
-    "--wandb_notes",
-    type=str,
-    help="Notes for the wandb run.",
-)
-args = parser.parse_args()
+def build_arg_parser():
+    parser = argparse.ArgumentParser(
+        description="Data-size sweep for the subsampled Representation Alignment.",
+    )
+    parser.add_argument(
+        "--config_path",
+        type=str,
+        required=True,
+        help="Path to the config yaml.",
+    )
+    parser.add_argument(
+        "--samples",
+        type=str,
+        default="1000,5000,10000,50000",
+        help="Comma-separated subsample sizes to sweep (e.g. '10000,50000').",
+    )
+    parser.add_argument(
+        "--wandb_notes",
+        type=str,
+        help="Notes for the wandb run.",
+    )
+    return parser
+
 
 if __name__ == "__main__":
+    args = build_arg_parser().parse_args()
     args.config_path = Path(args.config_path)
     if not args.config_path.exists():
         raise ValueError(f"Unable to find config yaml file: {args.config_path}")

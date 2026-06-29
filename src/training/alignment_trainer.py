@@ -22,8 +22,8 @@ from tqdm import tqdm, trange
 
 from src.models.alignment.alignment_factory import AlignmentFactory
 from src.utils.checkpoint import serialize_alignment_layer
-from src.utils.feature_spec import FeatureSpec
-from src.utils.feature_store import FeatureStore
+from src.features.feature_spec import FeatureSpec
+from src.features.feature_store import FeatureStore
 from src.training.optim.optimizer import get_optimizer_type
 from src.utils.plotting import embedding_plot, embedding_plot_w_markers
 from src.utils.train_utils import EarlyStopping, clip_gradients, save_checkpoint

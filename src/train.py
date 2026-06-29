@@ -166,33 +166,14 @@ def run(
         additional_unimodal_data["text"] = text_unimodal_data
         additional_unimodal_data["image"] = image_unimodal_data
 
-    # our evaluation datasets
-    eval_zero_shot_datasets = []
-    eval_retrieval_datasets = []
-    for d_name, l_data in [
-        ("zero_shot_datasets", eval_zero_shot_datasets),
-        ("retrieval_datasets", eval_retrieval_datasets),
-    ]:
-        for dataset_name in config["evaluation"][d_name]:
-            try:
-                _, ds_val = get_datasets(
-                    dataset=dataset_name,
-                    transform=get_default_transforms(),
-                    root_dir=data_path,
-                )
-                l_data.append((dataset_name, ds_val))
-                logger.info(
-                    f"Successfully loaded '{dataset_name}', test size: {len(ds_val)}"
-                )
-            except Exception as e:
-                logger.error(f"Error on {dataset_name}: {e}")
-
+    # Evaluation datasets are NOT loaded here: training only trains + checkpoints.
+    # Retrieval / zero-shot evaluation is a separate stage (src/eval.py), which
+    # loads the eval datasets itself. AlignmentTrainer's eval_*_datasets default
+    # to None, so they are simply omitted.
     trainer_kwargs = {
         "config": config,
         "train_dataset": train_dataset,
         "val_dataset": val_dataset,
-        "eval_zero_shot_datasets": eval_zero_shot_datasets,
-        "eval_retrieval_datasets": eval_retrieval_datasets,
         "wandb_notes": wandb_notes,
     }
     trainer_kwargs = trainer_kwargs | config["alignment"]

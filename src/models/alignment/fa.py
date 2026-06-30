@@ -114,7 +114,7 @@ class ProjectionHead(nn.Module):
 
 
 @AlignmentFactory.register()
-class FreezeAlignAlignmentLayer(BaseAlignmentLayer):
+class FAAlignmentLayer(BaseAlignmentLayer):
     """Freeze-Align projector baseline for STRUCTURE.
 
     Both modalities' components are instantiated on every layer instance;
@@ -190,7 +190,7 @@ class FreezeAlignAlignmentLayer(BaseAlignmentLayer):
         if modality not in ("image", "text"):
             raise ValueError(f"modality must be 'image' or 'text', got {modality!r}")
         self._modality = modality
-        logger.debug(f"FreezeAlignAlignmentLayer.set_modality({modality!r})")
+        logger.debug(f"FAAlignmentLayer.set_modality({modality!r})")
 
     def forward(
         self, z: torch.Tensor, mask: torch.Tensor | None = None
@@ -236,7 +236,7 @@ class FreezeAlignAlignmentLayer(BaseAlignmentLayer):
 
         if mask is None:
             raise ValueError(
-                "FreezeAlignAlignmentLayer text token mode requires an "
+                "FAAlignmentLayer text token mode requires an "
                 "attention mask"
             )
         # Token-level path: (B, S, D)

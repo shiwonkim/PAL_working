@@ -16,7 +16,7 @@ Supports SAIL's default ``concat`` aggregation mode for images:
 Since STRUCTURE creates one alignment layer per modality with the same
 class and kwargs, both modalities' components live on each instance.
 ``set_modality('image' | 'text')`` selects the active branch, similar
-to FreezeAlignAlignmentLayer.
+to FAAlignmentLayer.
 
 Reference: /home/shiwon/SAIL/model/linear.py::StarMLP
 """
@@ -109,5 +109,5 @@ class SAILStarMLP(BaseAlignmentLayer):
 
     # Structure reg uses the base class default: mean-pool all tokens.
     # Matching the concat forward (cat(CLS, mean(patches))) was tested
-    # on FreezeAlign (similar CLS+patches architecture) and performed
+    # on FA (similar CLS+patches architecture) and performed
     # worse due to 2× magnitude causing structure loss to dominate.

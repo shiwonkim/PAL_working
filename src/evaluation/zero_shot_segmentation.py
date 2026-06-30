@@ -25,8 +25,8 @@ Methods
 -------
 1. ``direct_cosine``   — raw encoder patches vs raw text embeddings
                          (no alignment layer; baseline)
-2. ``freezealign``     — FreezeAlign ``local_vision_proj`` per-patch features
-                         vs FreezeAlign full text forward (factorized decoding)
+2. ``fa``     — FA ``local_vision_proj`` per-patch features
+                         vs FA full text forward (factorized decoding)
 3. ``anchor_codebook`` — PAL-token: factorized S_pa @ S_ac decoding
 4. ``linear_perpatch`` — Linear/MLP per-patch projection (direct decoding)
 
@@ -326,10 +326,10 @@ class DirectCosineMethod(SegmentationMethod):
         ).to(device)
 
 
-class FreezeAlignMethod(SegmentationMethod):
-    """FreezeAlign ``local_vision_proj`` per-patch features vs full text forward.
+class FAMethod(SegmentationMethod):
+    """FA ``local_vision_proj`` per-patch features vs full text forward.
 
-    Image side mirrors FreezeAlign's token-path local branch *without* the
+    Image side mirrors FA's token-path local branch *without* the
     mean pool and CLS addition — projects every patch through
     ``local_vision_proj``, keeps all patches, strips the CLS position.
 
@@ -337,10 +337,10 @@ class FreezeAlignMethod(SegmentationMethod):
     ``text_proj``), identical to training.
 
     Uses factorized decoding (no per-patch L2 norm) to match the original
-    FreezeAlign segmentation eval protocol: unnormalized projected patches
+    FA segmentation eval protocol: unnormalized projected patches
     are compared against unit-norm text features via dot product.
     """
-    name = "freezealign"
+    name = "fa"
     pool_txt = "none"
 
     def __init__(self, alignment_image, alignment_text, decoding: str = "factorized"):
@@ -892,11 +892,11 @@ def build_method(
     pool_txt = cfg["features"].get("pool_txt", "avg")
     if name == "direct_cosine":
         return DirectCosineMethod(pool_txt=pool_txt)
-    if name == "freezealign":
+    if name == "fa":
         if alignment_image is None:
-            raise ValueError("freezealign method requires --checkpoint")
+            raise ValueError("fa method requires --checkpoint")
         dec = decoding_override if decoding_override else "factorized"
-        return FreezeAlignMethod(
+        return FAMethod(
             alignment_image=alignment_image, alignment_text=alignment_text,
             decoding=dec,
         )
@@ -924,8 +924,8 @@ def auto_filter_methods(
     """Drop methods that can't run with the given checkpoint/config.
 
     - No checkpoint     → only ``direct_cosine`` is allowed.
-    - PAL checkpoint    → PAL methods + direct_cosine OK, FreezeAlign dropped.
-    - FA checkpoint     → FreezeAlign + direct_cosine OK, PAL methods dropped.
+    - PAL checkpoint    → PAL methods + direct_cosine OK, FA dropped.
+    - FA checkpoint     → FA + direct_cosine OK, PAL methods dropped.
     """
     available = set(requested)
     if alignment_image is None:
@@ -933,13 +933,13 @@ def auto_filter_methods(
 
     layer_cls = type(alignment_image).__name__
     is_pal = "PAL" in layer_cls
-    is_fa = "FreezeAlign" in layer_cls
+    is_fa = "FA" in layer_cls
     is_linear_mlp = layer_cls in ("LinearAlignmentLayer", "ResLowRankHead", "MLPAlignmentLayer", "SAILStarMLP")
     keep = []
     for m in requested:
         if m == "direct_cosine":
             keep.append(m)
-        elif m == "freezealign" and is_fa:
+        elif m == "fa" and is_fa:
             keep.append(m)
         elif m == "anchor_codebook" and is_pal:
             keep.append(m)
@@ -964,7 +964,7 @@ def load_config(path: str) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Zero-shot segmentation eval (STRUCTURE × PAL × FreezeAlign)",
+        description="Zero-shot segmentation eval (STRUCTURE × PAL × FA)",
     )
     parser.add_argument("--config", required=True, help="Training yaml")
     parser.add_argument(
@@ -982,7 +982,7 @@ def main():
     parser.add_argument("--download", action="store_true")
     parser.add_argument(
         "--methods",
-        default="direct_cosine,freezealign,anchor_codebook,linear_perpatch",
+        default="direct_cosine,fa,anchor_codebook,linear_perpatch",
         help="Comma-separated method names",
     )
     parser.add_argument(

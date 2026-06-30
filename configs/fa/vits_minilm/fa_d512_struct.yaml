@@ -1,7 +1,7 @@
 defaults: !include ../../default.yaml
 
 overrides:
-    # FreezeAlign token-level, ViT-S + MiniLM.
+    # FA token-level, ViT-S + MiniLM.
     alignment:
         llm_model_name: "sentence-transformers/all-MiniLM-L6-v2"
         lvm_model_name: "vit_small_patch14_dinov2.lvd142m"
@@ -13,7 +13,7 @@ overrides:
     training:
         token_level: true
 
-        alignment_layer_name: "FreezeAlignAlignmentLayer"
+        alignment_layer_name: "FAAlignmentLayer"
         alignment_layer_kwargs:
             embed_dim: 512
             dropout: 0.1

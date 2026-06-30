@@ -40,7 +40,7 @@ overrides:
         n_random_subsample_train: 2000
         n_random_subsample_val: 1000
 
-        alignment_layer_name: "FreezeAlignAlignmentLayer"
+        alignment_layer_name: "FAAlignmentLayer"
         alignment_layer_kwargs:
             embed_dim: 384
             dropout: 0.1
@@ -65,7 +65,7 @@ overrides:
         num_classes_per_batch: 2
         plot_embedding_space: false
         log_structural_preservation: false
-        # FreezeAlign trains text_proj on local_text_proj outputs (post
+        # FA trains text_proj on local_text_proj outputs (post
         # LN + PatchProjection), so feeding raw CLS through text_proj at
         # eval is out-of-distribution. Always use the token CAP eval path.
         token_level_zero_shot: true

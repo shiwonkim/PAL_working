@@ -1322,7 +1322,7 @@ class AlignmentTrainer(Trainer):
             input_dim=text_dim,
             **self.config["training"]["alignment_layer_kwargs"],
         ).float()
-        # Some alignment layers (e.g. FreezeAlignAlignmentLayer) need to
+        # Some alignment layers (e.g. FAAlignmentLayer) need to
         # know which modality they serve because they hold both modalities'
         # components in a single class. Backwards compatible: layers that
         # don't define set_modality see no change.
@@ -1648,7 +1648,7 @@ class AlignmentTrainer(Trainer):
                 )
 
             # Reduce 3D token originals for structure_reg using each
-            # layer's architecture-aware reduction (e.g. FreezeAlign
+            # layer's architecture-aware reduction (e.g. FA
             # uses patches_mean + CLS, others use plain mean-pool).
             img_orig_for_loss = alignment_image.reduce_for_structure_reg(image_feats)
             txt_orig_for_loss = alignment_text.reduce_for_structure_reg(text_feats)

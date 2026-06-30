@@ -83,7 +83,7 @@ def load_alignment_layer(
         **entry["kwargs"],
     ).float()
     # set_modality must run before load_state_dict so the parameter structure
-    # matches what was saved (FreezeAlign/SAIL select submodules).
+    # matches what was saved (FA/SAIL select submodules).
     if hasattr(module, "set_modality"):
         module.set_modality(entry.get("modality") or modality)
     module.load_state_dict(entry["state_dict"])

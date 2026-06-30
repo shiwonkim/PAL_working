@@ -1525,17 +1525,19 @@ class AlignmentTrainer(Trainer):
     ):
         num_samples = image_features.shape[0]
 
-        # randomly shuffle the embeddings since we didn't shuffle before
-        random_sequence = torch.randperm(num_samples)
-        image_features = image_features[random_sequence]
-        text_features = text_features[random_sequence]
-        if text_mask is not None:
-            text_mask = text_mask[random_sequence]
+        # Shuffle by permuting INDICES, not the data. The old code did
+        # `image_features = image_features[randperm]`, copying the entire
+        # (N, T, D) tensor every epoch (tens of GB in token mode). Instead keep
+        # `perm` and gather each batch's rows on the fly: identical batch
+        # composition and randperm draw order, but no full-tensor copy.
+        perm = torch.randperm(num_samples)
 
-        # NOTE: ablation from reviewers (fixed set for R_S)
+        # NOTE: ablation from reviewers (fixed set for R_S). randperm drawn right
+        # after the main one (draw order preserved). perm[...] maps these
+        # positions into the shuffled order the old code indexed.
         random_sequence_fixed = torch.randperm(num_samples)[: self.train_batch_size]
-        image_features_fixed = image_features[random_sequence_fixed]
-        text_features_fixed = text_features[random_sequence_fixed]
+        image_features_fixed = image_features[perm[random_sequence_fixed]]
+        text_features_fixed = text_features[perm[random_sequence_fixed]]
 
         # in order to efficiently loop over the splits we use splits and modulo
         if additional_image_features is not None:
@@ -1559,6 +1561,13 @@ class AlignmentTrainer(Trainer):
 
         # FuseMix setup
         mixup_alpha = self.config["training"].get("mixup_alpha", 0.0)
+        # mixup pairs each sample with the one batch_size//2 ahead in the shuffle
+        # order; roll perm (cheap (N,) int) instead of rolling the data tensor.
+        perm_rolled = (
+            torch.roll(perm, shifts=self.train_batch_size // 2)
+            if mixup_alpha > 0.0
+            else None
+        )
 
         loss_metric = torchmetrics.MeanMetric().to(self.device)
         for i in range(0, num_samples, self.train_batch_size):
@@ -1566,27 +1575,20 @@ class AlignmentTrainer(Trainer):
             if end_i > num_samples and mixup_alpha > 0.0:
                 continue  # Skip last batch if it's not full, to simplify mixup
 
-            image_feats = image_features[i:end_i]
-            text_feats = text_features[i:end_i]
-            image_feats = image_feats.float().to(self.device)
-            text_feats = text_feats.float().to(self.device)
+            idx = perm[i:end_i]
+            image_feats = image_features[idx].float().to(self.device)
+            text_feats = text_features[idx].float().to(self.device)
 
             if self.config["training"].get("fixed_structure", False):
                 image_features_fixed = image_features_fixed.float().to(self.device)
                 text_features_fixed = text_features_fixed.float().to(self.device)
 
             if mixup_alpha > 0.0:
-                # To get a second batch, we can simply roll the original tensor
-                # This is an efficient way to pair each sample with a different one
-                roll_amount = self.train_batch_size // 2
-                image_feats2 = torch.roll(image_features, shifts=roll_amount, dims=0)[
-                    i:end_i
-                ]
-                text_feats2 = torch.roll(text_features, shifts=roll_amount, dims=0)[
-                    i:end_i
-                ]
-                image_feats2 = image_feats2.float().to(self.device)
-                text_feats2 = text_feats2.float().to(self.device)
+                # Gather the rolled-perm rows — same pairing as rolling the old
+                # shuffled tensor, without copying it.
+                idx2 = perm_rolled[i:end_i]
+                image_feats2 = image_features[idx2].float().to(self.device)
+                text_feats2 = text_features[idx2].float().to(self.device)
                 # Apply Mixup
                 # Sample a single interpolation coefficient
                 lam = np.random.beta(mixup_alpha, mixup_alpha)
@@ -1605,7 +1607,7 @@ class AlignmentTrainer(Trainer):
             # mask is simply None when there are no token features (CLS mode).
             aligned_image_feats = alignment_image(image_feats)
             text_mask_batch = (
-                text_mask[i:end_i].to(self.device) if text_mask is not None else None
+                text_mask[idx].to(self.device) if text_mask is not None else None
             )
             aligned_text_feats = alignment_text(text_feats, mask=text_mask_batch)
 
@@ -1711,9 +1713,12 @@ class AlignmentTrainer(Trainer):
             l_aligned_text_feats = torch.cat(l_aligned_text_feats).cpu()
         if self.config["training"].get("log_structural_preservation", False):
             n_samples = self.config["layer_selection"]["n_samples"]
+            # l_aligned_* were appended in shuffle (perm) order; gather the
+            # originals the same way so X/Z stay row-aligned.
+            sel = perm[:n_samples]
             for mod, original, aligned in [
-                ("image", image_features, l_aligned_image_feats),
-                ("text", text_features, l_aligned_text_feats),
+                ("image", image_features[sel], l_aligned_image_feats),
+                ("text", text_features[sel], l_aligned_text_feats),
             ]:
                 for k in self.config["training"].get(
                     "structural_preservation_k", [100]
@@ -1734,15 +1739,17 @@ class AlignmentTrainer(Trainer):
                     log_dict[f"{wandb_prefix}continuity@{k}_{mod}_train"] = cont
         if self.config["training"].get("log_repr_similarity", False):
             n_samples = self.config["layer_selection"]["n_samples"]
+            # x_feats gathered in perm order to match y_feats (l_aligned_*,
+            # appended in shuffle order).
             alignment_score_img, _, _ = compute_score(
-                x_feats=image_features[:n_samples].float().to(self.device),
+                x_feats=image_features[perm[:n_samples]].float().to(self.device),
                 y_feats=l_aligned_image_feats[:n_samples].float().to(self.device),
                 metric=self.config["layer_selection"]["metric"],
                 show_progress=False,
                 **self.config["layer_selection"].get("metric_kwargs", {}),
             )
             alignment_score_txt, _, _ = compute_score(
-                x_feats=text_features[:n_samples].float().to(self.device),
+                x_feats=text_features[perm[:n_samples]].float().to(self.device),
                 y_feats=l_aligned_text_feats[:n_samples].float().to(self.device),
                 metric=self.config["layer_selection"]["metric"],
                 show_progress=False,

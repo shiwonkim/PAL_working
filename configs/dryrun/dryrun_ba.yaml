@@ -1,4 +1,4 @@
-defaults: !include default.yaml
+defaults: !include ../default.yaml
 
 overrides:
     features:

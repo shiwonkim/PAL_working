@@ -17,7 +17,7 @@ overrides:
     training:
         token_level: true
 
-        alignment_layer_name: "SAILStarMLP"
+        alignment_layer_name: "SAILAlignmentLayer"
         alignment_layer_kwargs:
             dim_alignment: 512
             width_factor: 8

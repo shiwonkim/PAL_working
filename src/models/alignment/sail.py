@@ -42,7 +42,7 @@ def _build_star_mlp(input_dim, dim_alignment, width_factor):
 
 
 @AlignmentFactory.register()
-class SAILStarMLP(BaseAlignmentLayer):
+class SAILAlignmentLayer(BaseAlignmentLayer):
 
     def __init__(
         self,
@@ -70,7 +70,7 @@ class SAILStarMLP(BaseAlignmentLayer):
         if modality not in ("image", "text"):
             raise ValueError(f"modality must be 'image' or 'text', got {modality!r}")
         self._modality = modality
-        logger.debug(f"SAILStarMLP.set_modality({modality!r})")
+        logger.debug(f"SAILAlignmentLayer.set_modality({modality!r})")
 
     def _star_forward(self, z: torch.Tensor, mlp: nn.ModuleDict) -> torch.Tensor:
         z = mlp["ln"](z)

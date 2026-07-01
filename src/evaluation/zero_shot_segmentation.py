@@ -463,7 +463,7 @@ class LinearPerPatchMethod(SegmentationMethod):
                 return z0 + ai.alpha * delta  # (P, D_out)
             elif cls_name == "MLPAlignmentLayer":
                 return self.alignment_image.mlp(patches)  # (P, D_out)
-            elif cls_name == "SAILStarMLP":
+            elif cls_name == "SAILAlignmentLayer":
                 ai = self.alignment_image
                 if getattr(ai, "concat_cls_patch", False):
                     cls_token = layer_feats[0, :].to(device)  # (D,)
@@ -934,7 +934,7 @@ def auto_filter_methods(
     layer_cls = type(alignment_image).__name__
     is_pal = "PAL" in layer_cls
     is_fa = "FA" in layer_cls
-    is_linear_mlp = layer_cls in ("LinearAlignmentLayer", "ResLowRankHead", "MLPAlignmentLayer", "SAILStarMLP")
+    is_linear_mlp = layer_cls in ("LinearAlignmentLayer", "ResLowRankHead", "MLPAlignmentLayer", "SAILAlignmentLayer")
     keep = []
     for m in requested:
         if m == "direct_cosine":

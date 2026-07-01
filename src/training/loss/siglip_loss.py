@@ -8,7 +8,7 @@ classification: positive pairs (i==j) get label +1, negatives get -1.
     loss = -mean(logsigmoid(labels * logits))
 
 The learnable ``logit_scale`` and ``logit_bias`` live on the alignment
-layer (SAILStarMLP), not here — this loss reads them from the layer.
+layer (SAILAlignmentLayer), not here — this loss reads them from the layer.
 
 Reference: /home/shiwon/SAIL/model/loss.py::SigLipLoss
 """

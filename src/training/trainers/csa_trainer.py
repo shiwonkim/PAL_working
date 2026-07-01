@@ -31,7 +31,7 @@ def _patched_apply_pca(self, views):
 
 _mcca.MCCA._apply_pca = _patched_apply_pca
 
-from src.models.alignment.cca_class import NormalizedCCA
+from src.models.alignment.csa import NormalizedCCA
 from src.utils.plotting import embedding_plot, embedding_plot_w_markers
 from src.datasets.data_utils import FeatureDataset, get_meta_dict
 from src.evaluation.consts import (

@@ -28,7 +28,7 @@ from loguru import logger
 
 from src.models.alignment.alignment_factory import AlignmentFactory
 from src.models.alignment.base_alignment_layer import BaseAlignmentLayer
-from src.models.alignment.linear_alignment_layer import _masked_mean_pool
+from src.models.alignment.linear import _masked_mean_pool
 
 
 def _build_star_mlp(input_dim, dim_alignment, width_factor):

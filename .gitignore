@@ -284,9 +284,6 @@ wandb/*
 .vim
 report.xml
 notebooks/*.jpg
-assets/outputs
-assets/notebook_outputs
-assets/*.pickle
 *.dat
 notebooks/checkpoints
 notebooks/tmp_models

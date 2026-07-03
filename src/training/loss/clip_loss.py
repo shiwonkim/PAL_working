@@ -191,6 +191,12 @@ class CLIPLoss(nn.Module):
         # for schedulers (i.e. will be updated)
         self.structure_lambda = structure_lambda
 
+    @property
+    def use_structure_reg(self) -> bool:
+        # Judge from the config target, not the warmup-scheduled current value
+        # (which is 0 early on), so the answer is stable across the warmup.
+        return self.structure_lambda_base > 0
+
     def name(self):
         name = "CLIPLoss"
         name += f"(temp={self.temperature}"

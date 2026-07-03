@@ -1647,11 +1647,16 @@ class AlignmentTrainer(Trainer):
                     aligned_text_features_fixed,
                 )
 
-            # Reduce 3D token originals for structure_reg using each
-            # layer's architecture-aware reduction (e.g. FA
-            # uses patches_mean + CLS, others use plain mean-pool).
-            img_orig_for_loss = alignment_image.reduce_for_structure_reg(image_feats)
-            txt_orig_for_loss = alignment_text.reduce_for_structure_reg(text_feats)
+            # Pool the 2D "original" for structure_reg only when it is actually
+            # used AND the input is 3D tokens — each layer decides how (via
+            # reduce_for_structure_reg; layers without it raise). CLS features are
+            # already 2D, so they pass through unchanged.
+            if self.loss.use_structure_reg and image_feats.dim() != 2:
+                img_orig_for_loss = alignment_image.reduce_for_structure_reg(image_feats)
+                txt_orig_for_loss = alignment_text.reduce_for_structure_reg(text_feats)
+            else:
+                img_orig_for_loss = image_feats
+                txt_orig_for_loss = text_feats
 
             # backward pass with loss
             loss_extra = {}
@@ -1824,11 +1829,15 @@ class AlignmentTrainer(Trainer):
             if hasattr(self.loss, "logit_scale"):
                 val_loss_extra["logit_scale"] = self.loss.logit_scale
                 val_loss_extra["logit_bias"] = self.loss.logit_bias
-            # Reduce 3D token originals to 2D via the layer's pooling, same as
-            # train(), so structure_reg gets 2D. val_loss isn't backpropagated
-            # (no_grad) — this only keeps its definition identical to train's.
-            img_orig_for_loss = alignment_image.reduce_for_structure_reg(image_feats)
-            txt_orig_for_loss = alignment_text.reduce_for_structure_reg(text_feats)
+            # Same original-pooling rule as train() (3D + structure_reg active);
+            # val_loss isn't backpropagated (no_grad), this only keeps its
+            # definition identical to train's.
+            if self.loss.use_structure_reg and image_feats.dim() != 2:
+                img_orig_for_loss = alignment_image.reduce_for_structure_reg(image_feats)
+                txt_orig_for_loss = alignment_text.reduce_for_structure_reg(text_feats)
+            else:
+                img_orig_for_loss = image_feats
+                txt_orig_for_loss = text_feats
             loss_dict = self.loss(
                 image_embeddings_aligned=aligned_image_feats,
                 text_embeddings_aligned=aligned_text_feats,

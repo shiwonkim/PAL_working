@@ -40,6 +40,11 @@ class SigLipLoss(nn.Module):
         self.logit_scale = nn.Parameter(torch.tensor(math.log(logit_scale_init)))
         self.logit_bias = nn.Parameter(torch.tensor(logit_bias_init))
 
+    @property
+    def use_structure_reg(self) -> bool:
+        # SigLip has no warmup, so structure_lambda is the config target itself.
+        return self.structure_lambda > 0
+
     def step(self):
         pass
 

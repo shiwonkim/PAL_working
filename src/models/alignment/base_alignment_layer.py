@@ -16,11 +16,16 @@ class BaseAlignmentLayer(ABC, nn.Module):
         raise NotImplementedError
 
     def reduce_for_structure_reg(self, z: torch.Tensor) -> torch.Tensor:
-        """Reduce 3D token tensors to 2D for structure regularization.
+        """Pool 3D token features ``(B, T, D)`` to 2D ``(B, D)`` for structure_reg.
 
-        Subclasses override this to match their pooling architecture.
-        Default: mean-pool all tokens.
+        NOT provided by default: structure_reg only makes sense if a layer pools
+        its ``original`` the same way its forward pools the ``aligned``, so each
+        supporting layer must override this to match its own architecture. A
+        layer that does not override cannot be used with token-level structure_reg
+        (the trainer only calls this for 3D inputs when structure_reg is active).
         """
-        if z.dim() == 3:
-            return z.mean(dim=1)
-        return z
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support token-level structure_reg. "
+            "Override reduce_for_structure_reg to pool tokens to 2D consistently "
+            "with this layer's forward."
+        )

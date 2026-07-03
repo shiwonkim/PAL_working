@@ -1824,11 +1824,16 @@ class AlignmentTrainer(Trainer):
             if hasattr(self.loss, "logit_scale"):
                 val_loss_extra["logit_scale"] = self.loss.logit_scale
                 val_loss_extra["logit_bias"] = self.loss.logit_bias
+            # Reduce 3D token originals to 2D via the layer's pooling, same as
+            # train(), so structure_reg gets 2D. val_loss isn't backpropagated
+            # (no_grad) — this only keeps its definition identical to train's.
+            img_orig_for_loss = alignment_image.reduce_for_structure_reg(image_feats)
+            txt_orig_for_loss = alignment_text.reduce_for_structure_reg(text_feats)
             loss_dict = self.loss(
                 image_embeddings_aligned=aligned_image_feats,
                 text_embeddings_aligned=aligned_text_feats,
-                image_embeddings_original=image_feats,
-                text_embeddings_original=text_feats,
+                image_embeddings_original=img_orig_for_loss,
+                text_embeddings_original=txt_orig_for_loss,
                 **val_loss_extra,
             )
             # compute the median cosine similarity

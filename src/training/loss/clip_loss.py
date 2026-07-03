@@ -71,16 +71,21 @@ def structure_reg(
     Compute structure regularizer loss between original and aligned embeddings.
     Preserves relationships at multiple scales.
 
-    Both inputs must be 2D ``(B, D)``. For token-level alignment methods
-    (Token PAL, FA, token-Linear, token-MLP) the trainer passes
-    the raw token tensor ``(B, T, D)`` as ``original_embeddings``; in
-    that case we mean-pool across tokens to produce a per-sample summary
-    ``(B, D)`` that matches the pooled output of the alignment layer.
+    Both inputs must be 2D ``(B, D)``. Pooling token tensors down to 2D is the
+    responsibility of each layer — the ``original`` comes from the layer's
+    ``reduce_for_structure_reg`` and the ``aligned`` from its forward — so that
+    the two are pooled consistently for that architecture. A 3D tensor reaching
+    here means a layer did not reduce; we raise instead of silently mean-pooling
+    (which would compare mismatched poolings for token/multi-projector layers).
     """
-    if original_embeddings.dim() == 3:
-        original_embeddings = original_embeddings.mean(dim=1)
-    if aligned_embeddings.dim() == 3:
-        aligned_embeddings = aligned_embeddings.mean(dim=1)
+    if original_embeddings.dim() != 2 or aligned_embeddings.dim() != 2:
+        raise ValueError(
+            "structure_reg expects 2D (B, D) embeddings, got "
+            f"original={tuple(original_embeddings.shape)}, "
+            f"aligned={tuple(aligned_embeddings.shape)}. Pool tokens in the "
+            "layer's reduce_for_structure_reg (original) and forward (aligned) "
+            "before structure_reg — do not rely on an implicit mean here."
+        )
 
     with torch.amp.autocast("cuda", enabled=False):
         # normalize embeddings for numerical stability

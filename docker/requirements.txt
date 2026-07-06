@@ -1,0 +1,43 @@
+# PAL — Python dependencies (direct only; pip resolves the rest).
+#
+# torch / torchvision are NOT here — they come from the base image
+# (pytorch/pytorch:2.1.2-cuda11.8-cudnn8-devel). Only packages the code imports
+# directly (plus a few required runtime backends) are pinned; transitive deps
+# (tokenizers, safetensors, numba, llvmlite, pynndescent, ...) are pulled in
+# automatically by the pins below.
+
+# ── Core ML ──────────────────────────────────────────────────────────
+timm==0.9.16
+transformers==4.45.2
+accelerate==1.13.0          # device_map in backbone loading
+sentencepiece==0.2.1        # SentencePiece tokenizers (RoBERTa / future LLM backbones)
+
+# ── Numeric / data ───────────────────────────────────────────────────
+numpy==1.26.4
+pandas==2.3.3
+scipy==1.11.4
+scikit-learn==1.5.2
+joblib==1.5.3
+faiss-cpu==1.13.2           # mutual-kNN in measure_alignment
+
+# ── Torch helpers ────────────────────────────────────────────────────
+torchmetrics==1.9.0
+torchinfo==1.8.0
+
+# ── Visualization / analysis (interpretability scripts) ──────────────
+matplotlib==3.10.8
+seaborn==0.13.2
+umap-learn==0.5.6           # pulls numba / llvmlite / pynndescent
+
+# ── CSA comparison method ────────────────────────────────────────────
+cca-zoo==2.5.0              # pulls tensorly
+
+# ── Utilities ────────────────────────────────────────────────────────
+Pillow==12.1.1
+tqdm==4.67.3
+loguru==0.7.3
+wandb==0.26.0
+PyYAML==6.0.3
+pymp-pypi==0.5.0
+
+setuptools==69.5.1

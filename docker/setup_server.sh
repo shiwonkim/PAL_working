@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# STRUCTURE-BA — New server setup script
+# PAL — new-server setup script
 # Usage: bash docker/setup_server.sh [code_dir] [data_dir]
 
 set -euo pipefail
 
-IMAGE="shiwonkim/structure-ba:v1"
+IMAGE="shiwonkim/pal:v1"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CODE_DIR="${1:-$(dirname "$SCRIPT_DIR")}"
 DATA_DIR="${2:-${CODE_DIR}/data}"
 
-echo "=== STRUCTURE-BA Server Setup ==="
+echo "=== PAL Server Setup ==="
 echo "Image:    ${IMAGE}"
 echo "Code dir: ${CODE_DIR}"
 echo "Data dir: ${DATA_DIR}"
@@ -37,9 +37,9 @@ echo ""
 
 echo "Launching container..."
 docker run --rm --gpus all -it --shm-size=16g \
-    --name structure-ba \
-    -v "${CODE_DIR}":/workspace/STRUCTURE \
-    -v "${DATA_DIR}":/workspace/data \
-    -e PYTHONPATH=/workspace/STRUCTURE \
-    -w /workspace/STRUCTURE \
+    --name pal \
+    -v "${CODE_DIR}":/workspace/PAL \
+    -v "${DATA_DIR}":/workspace/PAL/data \
+    -e PYTHONPATH=/workspace/PAL \
+    -w /workspace/PAL \
     "${IMAGE}" bash

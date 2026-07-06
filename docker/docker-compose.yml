@@ -1,16 +1,22 @@
 services:
-  structure:
+  pal:
     build:
       context: .
-      dockerfile: Dockerfile.structure
+      dockerfile: Dockerfile
     runtime: nvidia
     volumes:
-      - ../:/workspace/STRUCTURE          # mount STRUCTURE code repo
-      - /path/to/data:/workspace/data     # adjust on Server B
+      # Code repo. If data/ and results/ live inside the repo root, they come
+      # along with this mount. If they live elsewhere on the server, mount them
+      # explicitly instead (uncomment + adjust the two lines below).
+      - ../:/workspace/PAL
+      # - /path/on/server/data:/workspace/PAL/data
+      # - /path/on/server/results:/workspace/PAL/results
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
-      - PYTHONPATH=/workspace/STRUCTURE
-    working_dir: /workspace/STRUCTURE
+      - PYTHONPATH=/workspace/PAL
+      # wandb: uncomment and set an 86-char key (this image ships wandb>=0.22.3).
+      # - WANDB_API_KEY=your_key_here
+    working_dir: /workspace/PAL
     shm_size: '16gb'
     stdin_open: true
     tty: true

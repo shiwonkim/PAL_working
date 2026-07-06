@@ -1,7 +1,7 @@
 # PAL — environment-only image.
 # Code and data are mounted at runtime via volumes (see docker-compose.yml).
 
-FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-devel
+FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 

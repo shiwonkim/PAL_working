@@ -82,7 +82,8 @@ the PAL-token layer and the trainer.
 
 ## Conventions
 
-- Refactor on branches; keep `main` green.
+- Commit refactors straight to `main`; keep it green by running the relevant smoke
+  before each commit (no long-lived side branches).
 - **Whenever touching layer classes or checkpoint save/load, verify loadability** —
   rebuild from a checkpoint and confirm forward output matches before/after the change.
 - Update this file when a refactor changes structure.

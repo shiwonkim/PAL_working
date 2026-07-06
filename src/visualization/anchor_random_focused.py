@@ -28,19 +28,19 @@ from timm import create_model
 from timm.data import resolve_data_config
 from torchvision.models.feature_extraction import create_feature_extractor
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.models.alignment import *  # noqa: F401,F403
 from src.utils.yaml_loader import Loader, merge_dicts
-from src.models.encoders.text_models import load_llm, load_tokenizer
-from viz.anchor_cross_modal import (
+from src.models.backbones.text_models import load_llm, load_tokenizer
+from src.visualization.anchor_cross_modal import (
     _ensure_rgb,
     get_image_anchor_attention,
     get_text_anchor_attention,
     plot_cross_modal_grid,
     select_top_anchors,
 )
-from viz.anchor_pair_finder import load_dataset_pool
+from src.visualization.anchor_pair_finder import load_dataset_pool
 
 
 def main():

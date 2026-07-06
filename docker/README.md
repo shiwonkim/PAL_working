@@ -4,6 +4,9 @@ Environment-only image for the **PAL** (Projection-free Anchor Learning) project
 Ships Python 3.10, PyTorch 2.1.2+cu118, and the pipeline dependencies. The image
 contains **no code or data** — both are mounted at runtime via volumes.
 
+**Image:** [`shiwonkim/pal:v1`](https://hub.docker.com/r/shiwonkim/pal) on Docker Hub
+(`docker pull shiwonkim/pal:v1`).
+
 ## Quick setup (new server)
 
 ```bash

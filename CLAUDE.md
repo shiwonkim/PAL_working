@@ -18,17 +18,13 @@ feature caches, checkpoints, and the frozen, revision-ready code.
   them from the original repo:
   `cd ~/PAL_working && ln -s ~/STRUCTURE/data ~/STRUCTURE/results .`
 
-## Context / reference docs (background, NOT current instructions)
+## Context / reference docs (historical — refactor notes, NOT current)
 
-- **`docs/pipeline_overview.md`** (+ `.ko.md`) — **start here**: full training/inference
-  architecture map with file:line refs and refactoring observations.
-- `docs/STRUCTURE_context.md` — the original repo's old `CLAUDE.md`. Describes the prior
-  experiment workflow/state (batches, server A/B, etc.) — **treat as history, not live
-  rules**; most of it does not apply to this refactor repo.
-- `IMPLEMENTATION.md` — design notes & per-file diffs from the original build.
-- `PROJECT_LOG.md` / `EXPERIMENTS.md` — chronological work log & experiment ledger.
-- `docs/laion_reimplementation_TODO.md` — deferred LAION memory work (ties into the
-  FeatureStore refactor).
+Assorted notes kept from the refactor: `docs/pipeline_overview.md` (+ `.ko.md`),
+`docs/STRUCTURE_context.md` (the original repo's old `CLAUDE.md`), `IMPLEMENTATION.md`,
+`PROJECT_LOG.md`, `EXPERIMENTS.md`, `docs/laion_reimplementation_TODO.md`. Background only —
+written during the refactor and **not kept up to date**; verify against the code before
+relying on any of them.
 
 ## Environment
 
@@ -45,29 +41,48 @@ feature caches, checkpoints, and the frozen, revision-ready code.
 2. **Rename classes to PAL** ✅ *done* — `BridgeAnchor*` → `PAL*`, `configs/ba` →
    `configs/pal`, with runtime class-name checks and checkpoint `class_name` strings updated.
 3. **Extract a FeatureStore** abstraction ✅ *core done; LAION (3.3) deferred* —
-   `src/features/feature_store.py` owns cache path building, extract-or-load (mmap), encoder
+   `src/features/feature_store.py` owns cache path building, extract-or-load (mmap), backbone
    builders, text-mask I/O, and image-dedup; `FeatureSpec.cache_suffix` centralises suffix
-   construction. Stage decoupling (extract → train → eval) via `require_cached` + the thin
-   CLIs `src/{extract_features,train}.py` + `run_pipeline.sh`. **Remaining: 3.3 LAION memory
-   reimplementation** (virtual-concat + mmap + buffer-shuffle + prefetch) — see
-   `docs/laion_reimplementation_TODO.md`; deferred on the `serverB` branch.
+   construction. The pipeline is split into two thin CLIs: `src/train.py` (extract-or-load →
+   train → checkpoint) and `src/eval.py` (load checkpoint → retrieval + zero-shot), chained by
+   `run_pipeline.sh`. **Remaining: 3.3 LAION memory reimplementation** (virtual-concat + mmap +
+   buffer-shuffle + prefetch) — see `docs/laion_reimplementation_TODO.md`; deferred on the
+   `serverB` branch.
 4. **Consolidate the CLS ↔ Token branching** ✅ *done* — `token_level` stays a config flag
    (not derivable from the layer class); its propagation is centralised in
    `src/features/feature_spec.py` (`FeatureSpec`), and the CLS/token PAL layers are merged into one
    `PALAlignmentLayer` that picks the path by input rank.
 5. **Split the oversized `AlignmentTrainer`** ✅ *done* — `fit()` (~840 lines) split into
    `prepare_features` (eager: load / dedup / subsample / layer-select / slice or token-load one
-   layer pair → `PreparedFeatures`) and `_train_layer_pair` (build + train + checkpoint + eval),
-   with `fit()` a thin orchestrator. Single layer pair only (multi-pair sweeps raise); extraction
-   is `prepare_features` with no training.
+   layer pair → `PreparedFeatures`) and `_train_layer_pair` (build + train + checkpoint), with
+   `fit()` a thin orchestrator. Evaluation is separate (`src/eval.py`); training ends at the saved
+   checkpoint. Single layer pair only (multi-pair sweeps raise).
 
 Already done upstream: `cls_attn_prior` (an unused, never-enabled feature) removed from
 the PAL-token layer and the trainer.
+
+## Further cleanup (post-goals)
+
+- **`models/encoders` → `models/backbones`** — the folder holds frozen feature-extractor loaders
+  (`load_llm` for text, incl. decoder-only LLMs like Llama/Qwen; `load_lvm` for vision), so the
+  architecture-neutral "backbones" fits better than "encoders".
+- **`models/alignment`** — layer files/classes normalised: `pal.py`/`PALAlignmentLayer`,
+  plus `linear.py`, `mlp.py`, `fa.py`/`FAAlignmentLayer`, `sail.py`/`SAILAlignmentLayer`,
+  `csa.py`. All register via `AlignmentFactory`; `alignment` names the role, not an architecture.
+- **`structure_reg`** — now requires 2D inputs (raises on 3D). Pooling tokens to 2D is each
+  layer's `reduce_for_structure_reg` (base raises → token-level structure_reg needs a layer that
+  overrides it). The trainer reduces only when structure_reg is active AND the input is 3D; CLS
+  (2D) passes through. Same rule in `train()` and `validate()`.
+- **`evaluation/`** — `consts.py` → `zero_shot_metadata.py` (zero-shot class names + prompt
+  templates; retrieval doesn't use them). Removed the unused `zero_shot_patch_voting.py`;
+  `zero_shot_segmentation.py` stays a standalone CLI (its VOC/ADE class constants live next to
+  the IoU logic).
+- **`src/visualization/`** (old root `viz/`) removed — standalone interpretability / paper-figure
+  scripts, never imported by the pipeline; kept separately by the author.
 
 ## Conventions
 
 - Refactor on branches; keep `main` green.
 - **Whenever touching layer classes or checkpoint save/load, verify loadability** —
   rebuild from a checkpoint and confirm forward output matches before/after the change.
-- Update the relevant doc when a refactor changes structure (this file,
-  `docs/pipeline_overview.md`).
+- Update this file when a refactor changes structure.

@@ -30,6 +30,12 @@ relying on any of them.
 
 - Python 3.10, conda env `structure` (PyTorch 2.1.2+cu118, timm 0.9.16,
   transformers 4.45.2). Same env as the original repo.
+- **Single-GPU** train/eval; the code just uses `torch.device("cuda")` — there is
+  no GPU flag in the configs or CLIs. Pick the GPU at run time with
+  `CUDA_VISIBLE_DEVICES`, e.g. `CUDA_VISIBLE_DEVICES=1 python -m src.train
+  --config_path <cfg>`; it propagates into `run_pipeline.sh` and `src/eval.py`
+  too. In Docker, `--gpus all` exposes the GPUs and `-e CUDA_VISIBLE_DEVICES=1`
+  selects one.
 
 ## Refactor goals (the plan)
 

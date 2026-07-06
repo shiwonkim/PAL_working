@@ -31,8 +31,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.datasets.coco_dataset import LoadingType
-from src.models.encoders.text_models import load_llm, load_tokenizer
-from src.models.encoders.vision_models import load_lvm
+from src.models.backbones.text_models import load_llm, load_tokenizer
+from src.models.backbones.vision_models import load_lvm
 from src.utils.utils import set_transform_dataset
 
 

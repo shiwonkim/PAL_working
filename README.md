@@ -33,7 +33,7 @@ PyTorch 2.1.2+cu118 and all dependencies. Code and data are mounted at runtime.
 
 ```bash
 git clone <this-repo> PAL_working && cd PAL_working
-bash docker/run.sh /path/to/PAL_working /path/to/data
+bash docker/launch.sh /path/to/PAL_working /path/to/data
 ```
 See [`docker/README.md`](docker/README.md) for details.
 
@@ -79,7 +79,7 @@ YAML configs live in `configs/`, one directory per alignment method:
 ```
 PAL_working/
 ├── configs/                 # YAML configs (one dir per method)
-├── docker/                  # environment image (Dockerfile, requirements, run.sh)
+├── docker/                  # environment image (Dockerfile, requirements, launch.sh)
 ├── docs/                    # data_setup.md + refactor notes
 ├── src/
 │   ├── train.py, eval.py    # entry points

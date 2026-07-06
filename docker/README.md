@@ -10,7 +10,7 @@ contains **no code or data** — both are mounted at runtime via volumes.
 ## Quick setup (new server)
 
 ```bash
-bash docker/run.sh /path/to/PAL_working /path/to/data
+bash docker/launch.sh /path/to/PAL_working /path/to/data
 ```
 Pulls the image, runs a GPU sanity check, and drops you into a container shell.
 

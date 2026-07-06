@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PAL — pull the image (if not already present) and launch a container shell.
-# Usage: bash docker/run.sh [code_dir] [data_dir]
+# Usage: bash docker/launch.sh [code_dir] [data_dir]
 
 set -euo pipefail
 

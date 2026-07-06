@@ -80,6 +80,72 @@ def load_dataset(
     return train_dataset, val_dataset
 
 
+def load_unimodal_data(config, data_path):
+    """Load additional single-modality datasets used only by structure_reg.
+
+    ``unimodal_data`` in the config lists text-only and image-only datasets
+    (unpaired); their features feed structure_reg's per-modality term, not the
+    contrastive loss. Returns ``{"text": [...], "image": [...]}`` of
+    ``(name, DataLoader)`` pairs, or ``None`` when ``unimodal_data.use`` is false.
+    """
+    if not config["training"]["unimodal_data"]["use"]:
+        return None
+
+    text_unimodal_data = []
+    image_unimodal_data = []
+    for modality in ["text", "image"]:
+        if config["training"]["unimodal_data"][modality] is None:
+            continue
+        for dataset_name in config["training"]["unimodal_data"][modality]:
+            orig_dataset_name = dataset_name
+            use_val_set = False
+            range_from = None
+            range_to = None
+            if "_val" in dataset_name:
+                dataset_name = dataset_name.replace("_val", "")
+                use_val_set = True
+            if "_" in dataset_name:
+                range_from = int(dataset_name.split("_")[1])
+                range_to = int(dataset_name.split("_")[2])
+                dataset_name = dataset_name.split("_")[0]
+            try:
+                ds_train, ds_val = get_datasets(
+                    dataset=dataset_name,
+                    transform=get_default_transforms(),
+                    root_dir=data_path,
+                )
+                if use_val_set:
+                    ds_train = ds_val
+                if range_from is not None and range_to is not None:
+                    ds_train.df = ds_train.df.iloc[range_from:range_to]
+                    ds_train.df.reset_index(drop=True, inplace=True)
+                if config["training"]["unimodal_data"].get("samples", None):
+                    ds_train.df = ds_train.df.sample(
+                        n=config["training"]["unimodal_data"]["samples"]
+                    )
+                    ds_train.df.reset_index(drop=True, inplace=True)
+                train_loader = DataLoader(
+                    ds_train,
+                    batch_size=config["features"]["batch_size"],
+                    drop_last=False,
+                    shuffle=False,
+                    pin_memory=True,
+                    num_workers=config["features"]["num_workers"],
+                )
+                if modality == "text":
+                    text_unimodal_data.append((orig_dataset_name, train_loader))
+                else:
+                    image_unimodal_data.append((orig_dataset_name, train_loader))
+                logger.info(
+                    f"Successfully loaded unimodal data '{orig_dataset_name}', "
+                    f"train size: {len(ds_train)}"
+                )
+            except Exception as e:
+                logger.error(f"Error on {dataset_name}: {e}")
+
+    return {"text": text_unimodal_data, "image": image_unimodal_data}
+
+
 def run(
     config_path,
     wandb_notes=None,
@@ -109,62 +175,9 @@ def run(
         precompute_captions=config["features"]["precompute_captions"],
     )
 
-    # additional unimodal data
-    additional_unimodal_data = None
-    text_unimodal_data = []
-    image_unimodal_data = []
-    if config["training"]["unimodal_data"]["use"]:
-        for modality in ["text", "image"]:
-            if config["training"]["unimodal_data"][modality] is None:
-                continue
-            for dataset_name in config["training"]["unimodal_data"][modality]:
-                orig_dataset_name = dataset_name
-                use_val_set = False
-                range_from = None
-                range_to = None
-                if "_val" in dataset_name:
-                    dataset_name = dataset_name.replace("_val", "")
-                    use_val_set = True
-                if "_" in dataset_name:
-                    range_from = int(dataset_name.split("_")[1])
-                    range_to = int(dataset_name.split("_")[2])
-                    dataset_name = dataset_name.split("_")[0]
-                try:
-                    ds_train, ds_val = get_datasets(
-                        dataset=dataset_name,
-                        transform=get_default_transforms(),
-                        root_dir=data_path,
-                    )
-                    if use_val_set:
-                        ds_train = ds_val
-                    if range_from is not None and range_to is not None:
-                        ds_train.df = ds_train.df.iloc[range_from:range_to]
-                        ds_train.df.reset_index(drop=True, inplace=True)
-                    if config["training"]["unimodal_data"].get("samples", None):
-                        ds_train.df = ds_train.df.sample(
-                            n=config["training"]["unimodal_data"]["samples"]
-                        )
-                        ds_train.df.reset_index(drop=True, inplace=True)
-                    train_loader = DataLoader(
-                        ds_train,
-                        batch_size=config["features"]["batch_size"],
-                        drop_last=False,
-                        shuffle=False,
-                        pin_memory=True,
-                        num_workers=config["features"]["num_workers"],
-                    )
-                    if modality == "text":
-                        text_unimodal_data.append((orig_dataset_name, train_loader))
-                    else:
-                        image_unimodal_data.append((orig_dataset_name, train_loader))
-                    logger.info(
-                        f"Successfully loaded unimodal data '{orig_dataset_name}', train size: {len(ds_train)}"
-                    )
-                except Exception as e:
-                    logger.error(f"Error on {dataset_name}: {e}")
-        additional_unimodal_data = {}
-        additional_unimodal_data["text"] = text_unimodal_data
-        additional_unimodal_data["image"] = image_unimodal_data
+    # Additional single-modality data for structure_reg only (None otherwise;
+    # the contrastive loss uses the paired train_dataset above).
+    additional_unimodal_data = load_unimodal_data(config, data_path)
 
     # Evaluation datasets are NOT loaded here: training only trains + checkpoints.
     # Retrieval / zero-shot evaluation is a separate stage (src/eval.py), which

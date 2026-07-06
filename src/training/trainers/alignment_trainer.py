@@ -31,7 +31,7 @@ from src.datasets.data_utils import (
     FeatureDataset,
     get_meta_dict,
 )
-from src.evaluation.consts import (
+from src.evaluation.zero_shot_metadata import (
     DATASETS_TO_CLASSES,
     DATASETS_TO_TEMPLATES,
     SIMPLE_PROMPT_TEMPLATE,

@@ -19,7 +19,7 @@ Improvements over the freeze-align reference (``train/zero_shot_segmentation.py`
 - ``ignore_index=255`` excluded from both prediction and target when updating
   the confusion matrix.
 - Ported prompt-ensembling: 80 OpenAI ImageNet templates, averaged per class,
-  reusing ``src/evaluation/consts.py::DATASETS_TO_TEMPLATES['imagenet']``.
+  reusing ``src/evaluation/zero_shot_metadata.py::DATASETS_TO_TEMPLATES['imagenet']``.
 
 Methods
 -------
@@ -81,7 +81,7 @@ from tqdm import tqdm
 
 from src.utils.yaml_loader import Loader, merge_dicts
 from src.datasets.data_utils import _ensure_rgb_image
-from src.evaluation.consts import DATASETS_TO_TEMPLATES
+from src.evaluation.zero_shot_metadata import DATASETS_TO_TEMPLATES
 from src.evaluation.zero_shot_classifier import build_zero_shot_classifier
 from src.models.encoders.text_models import load_llm, load_tokenizer
 from src.utils.checkpoint import load_alignment_layer

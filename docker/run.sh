@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PAL — new-server setup script
-# Usage: bash docker/setup_server.sh [code_dir] [data_dir]
+# PAL — pull the image (if not already present) and launch a container shell.
+# Usage: bash docker/run.sh [code_dir] [data_dir]
 
 set -euo pipefail
 

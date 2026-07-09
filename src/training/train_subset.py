@@ -1,7 +1,7 @@
 """Data-size sweep for representation alignment.
 
-Trains an alignment layer on random subsamples of the training set (seed 42)
-to trace the data-scaling curve. Subsample sizes are given via ``--samples``
+Trains an alignment layer on random subsamples of the training set (seed via
+``--seed``, default 42) to trace the data-scaling curve. Subsample sizes are given via ``--samples``
 (default ``1000,5000,10000,50000``); pass a subset or a single value to run
 only those points — e.g. to resume an interrupted sweep with ``--samples
 10000,50000``. Full-data training is handled by the main training script, not
@@ -38,6 +38,13 @@ def build_arg_parser():
         type=str,
         help="Notes for the wandb run.",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed (config['random_state']) for weight init, subsample "
+        "selection, and batch shuffle. Default 42 (all prior experiments).",
+    )
     return parser
 
 
@@ -73,7 +80,7 @@ if __name__ == "__main__":
 
     sample_sizes = [int(s.strip()) for s in args.samples.split(",")]
     for n_samples in sample_sizes:
-        config["random_state"] = 42
+        config["random_state"] = args.seed
         trainer = AlignmentTrainer(**trainer_kwargs)
         trainer.fit(n_random_subsample_train=n_samples)
         del trainer

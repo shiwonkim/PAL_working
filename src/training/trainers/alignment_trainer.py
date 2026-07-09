@@ -36,7 +36,10 @@ from src.evaluation.zero_shot_metadata import (
     DATASETS_TO_TEMPLATES,
     SIMPLE_PROMPT_TEMPLATE,
 )
-from src.evaluation.retrieval import retrieval_metrics_df
+from src.evaluation.retrieval import (
+    retrieval_metrics_df,
+    text_to_image_retrieval_metrics,
+)
 from src.evaluation.zero_shot_classifier import (
     build_zero_shot_classifier,
     chunked_logits,
@@ -114,6 +117,7 @@ class AlignmentTrainer(Trainer):
         self.print_model_summary = print_model_summary
         # CLS (2D) vs token (3D/CAP) mode — config flag, read once and reused.
         self.token_level = bool(self.config["training"].get("token_level", False))
+
         self.save_path = Path(config["paths"]["save_path"])
         self.llm_model_name = llm_model_name
         self.lvm_model_name = lvm_model_name
@@ -601,7 +605,7 @@ class AlignmentTrainer(Trainer):
         # mmap=True: the unified token cache is large (ViT-L COCO train is ~44
         # GB); memory-map it so deriving the CLS slice pages in only the rows it
         # touches instead of loading the whole tensor into committed RAM.
-        payload = torch.load(path, weights_only=False, mmap=True)
+        payload = torch.load(str(path), weights_only=False, mmap=True)
         feats = payload["features"]
         # tokens[:, 0, :] is the CLS token under DINOv2's standard layout.
         # .contiguous() materialises just the (N, D) CLS slice off the mmap.
@@ -624,8 +628,8 @@ class AlignmentTrainer(Trainer):
         # mmap=True: see _try_load_image_cls_from_tokens. The masked-mean reduces
         # the sequence axis, so the result is (N, D) regardless; mmap keeps the
         # full (N, T, D) token tensor off committed RAM while it is reduced.
-        feats = torch.load(feats_path, weights_only=False, mmap=True)["features"]
-        mask = torch.load(mask_path, weights_only=False, mmap=True)["mask"]
+        feats = torch.load(str(feats_path), weights_only=False, mmap=True)["features"]
+        mask = torch.load(str(mask_path), weights_only=False, mmap=True)["mask"]
         # masked mean over the sequence axis: (feats * mask).sum(1) / mask.sum(1)
         m = mask.to(dtype=feats.dtype).unsqueeze(-1)
         denom = m.sum(dim=1).clamp(min=1)
@@ -1495,10 +1499,15 @@ class AlignmentTrainer(Trainer):
             "config": self.config,
             "loss": self.loss.state_dict(),
         }
+        # seed{random_state} in the dir keeps multi-seed runs of the same config
+        # from overwriting each other on disk (the checkpoint also stores the
+        # seed inside via save_dict["config"], but the path is what prevents
+        # collisions). The "(img, txt)" layer pattern is preserved so eval.py's
+        # layer auto-detect regex still matches.
         save_checkpoint(
             run_dir=self.save_path
             / wandb.run.name
-            / f"{layer_comb}_{layer_comb_score:.4f}",
+            / f"{layer_comb}_{layer_comb_score:.4f}_seed{self.config['random_state']}",
             save_dict=save_dict,
             epoch=epoch,
         )
@@ -2400,9 +2409,13 @@ class AlignmentTrainer(Trainer):
                 k_values=[1, 5, 10],
                 batch_size=self.eval_batch_size,
             )
-            recalls_t2i = retrieval_metrics_df(
-                image_embeds=aligned_text_feats,
-                text_embeds=aligned_image_feats,
+            # Text→image needs a UNIQUE-image gallery: the row-wise feats
+            # duplicate each image once per caption, and ranking over those
+            # identical duplicates collapses T2I R@1 onto R@5. Dedicated helper
+            # dedups the gallery and gives each caption one relevant image.
+            recalls_t2i = text_to_image_retrieval_metrics(
+                text_embeds=aligned_text_feats,
+                image_embeds=aligned_image_feats,
                 df=df,
                 image_column="image_path",
                 k_values=[1, 5, 10],

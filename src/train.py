@@ -1,3 +1,14 @@
+import os
+
+# expandable_segments avoids CUDA memory-fragmentation OOMs for token-level
+# baselines (e.g. FA/SAIL) at batch 4096: the allocator returns fragmented
+# "reserved but unallocated" space to satisfy large contiguous requests instead
+# of raising. It only changes how memory is allocated, not any computation, so
+# results/loss are unaffected. Must be set before the CUDA caching allocator
+# initialises (before torch touches the GPU), hence the top of the entry point.
+# setdefault so an explicit PYTORCH_CUDA_ALLOC_CONF env override still wins.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import argparse
 from pathlib import Path
 from typing import List
@@ -149,6 +160,7 @@ def load_unimodal_data(config, data_path):
 def run(
     config_path,
     wandb_notes=None,
+    seed=None,
 ):
     """Build the trainer from a config and train one alignment layer pair.
 
@@ -163,6 +175,13 @@ def run(
         config = yaml.load(f, Loader=Loader)
     # merge defaults with overrides (overrides take precedence)
     config = merge_dicts(config.get("defaults", {}), config.get("overrides", {}))
+
+    # Optional CLI seed override for multi-seed runs: when --seed is omitted
+    # (seed=None) the config's random_state is used unchanged; when given it
+    # overrides random_state (weight init, subsample selection, batch shuffle).
+    if seed is not None:
+        config["random_state"] = seed
+        logger.info(f"Seed overridden from CLI: random_state={seed}")
 
     data_path = Path(config["paths"]["data_path"])
     train_dataset, val_dataset = load_dataset(
@@ -221,9 +240,16 @@ def build_arg_parser(description="Experiments for the Representation Alignment."
         type=str,
         help="Notes for the wandb run.",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Override config['random_state'] (weight init, subsample, shuffle). "
+        "Omit to use the config value (default 42). Set per run for multi-seed.",
+    )
     return parser
 
 
 if __name__ == "__main__":
     args = build_arg_parser().parse_args()
-    run(config_path=args.config_path, wandb_notes=args.wandb_notes)
+    run(config_path=args.config_path, wandb_notes=args.wandb_notes, seed=args.seed)

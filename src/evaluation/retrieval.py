@@ -94,3 +94,67 @@ def retrieval_metrics_df(
         metrics[f"MAP@{k}"] = map_sum[k] / N
 
     return metrics
+
+
+def text_to_image_retrieval_metrics(
+    text_embeds: torch.Tensor,
+    image_embeds: torch.Tensor,
+    df: pd.DataFrame,
+    image_column: str = "image_name",
+    k_values: List[int] = [1, 5, 10],
+    batch_size: int = 64,
+) -> Dict[str, float]:
+    """Recall@k / Precision@k / MAP@k for text→image retrieval.
+
+    The row-wise eval features duplicate each image once per caption, so naively
+    swapping the image/text args into ``retrieval_metrics_df`` ranks over those
+    duplicates: identical copies of the true image fill consecutive ranks, which
+    collapses R@1 onto R@5. Here the gallery is the set of UNIQUE images (one
+    embedding per ``image_column`` value) and every caption query has exactly one
+    relevant image — the standard text→image protocol.
+    """
+    text_embeds = safe_normalize(text_embeds, p=2, dim=1)
+    image_embeds = safe_normalize(image_embeds, p=2, dim=1)
+
+    # Deduplicate the gallery to unique images. Rows sharing an image carry the
+    # same image embedding, so the first occurrence of each image suffices.
+    dfr = df.reset_index(drop=True)
+    first_rows = dfr.drop_duplicates(subset=image_column).index.tolist()
+    gallery = image_embeds[first_rows]  # (M, D) unique images
+    path_to_gid = {dfr.loc[ri, image_column]: gi for gi, ri in enumerate(first_rows)}
+    # Each caption query maps to the single gallery id of its image.
+    query_gid = [path_to_gid[dfr.loc[i, image_column]] for i in range(len(dfr))]
+
+    N = text_embeds.size(0)
+    M = gallery.size(0)
+    max_k = min(max(k_values), M)
+    recall_hits = {k: 0.0 for k in k_values}
+    precision_sum = {k: 0.0 for k in k_values}
+    map_sum = {k: 0.0 for k in k_values}
+
+    for start in range(0, N, batch_size):
+        end = min(start + batch_size, N)
+        sims = text_embeds[start:end] @ gallery.T  # [B, M]
+        _, topk = torch.topk(sims, k=max_k, dim=1)
+        for row, ranked in enumerate(topk.tolist()):
+            gt = query_gid[start + row]  # exactly one relevant image
+            rel_flags = [g == gt for g in ranked]
+            for k in k_values:
+                rel_in_k = sum(rel_flags[:k])
+                if rel_in_k > 0:
+                    recall_hits[k] += 1
+                precision_sum[k] += rel_in_k / k
+                hits, ap = 0, 0.0
+                for r, is_rel in enumerate(rel_flags[:k], start=1):
+                    if is_rel:
+                        hits += 1
+                        ap += hits / r
+                map_sum[k] += ap  # denominator is 1 (single relevant image)
+
+    metrics = {}
+    for k in k_values:
+        metrics[f"R@{k}"] = recall_hits[k] / N
+        metrics[f"P@{k}"] = precision_sum[k] / N
+        metrics[f"MAP@{k}"] = map_sum[k] / N
+
+    return metrics

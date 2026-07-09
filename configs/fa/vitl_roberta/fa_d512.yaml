@@ -9,6 +9,13 @@ overrides:
     features:
         batch_size: 64
         num_workers: 0
+        # Pin the layer pair (COCO ViT-L -> (23, 24)) to match PAL, skipping
+        # mutual-kNN layer selection. token_level=true consumes single-layer
+        # token caches, so pool must be "none" (trainer refuses pinned+non-none).
+        pool_img: "none"
+        pool_txt: "none"
+        layer_img: 23
+        layer_txt: 24
 
     training:
         token_level: true

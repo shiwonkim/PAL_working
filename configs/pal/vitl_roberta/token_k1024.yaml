@@ -9,6 +9,14 @@ overrides:
         dataset: "coco"
         batch_size: 64
         num_workers: 0
+        # Pin the selected layer pair (COCO ViT-L -> (23, 24)), skipping
+        # mutual-kNN layer selection. With a pinned layer + token_level=true the
+        # trainer requires pool=none (single-layer token caches; the CLS/avg
+        # pre-load is unused), so set both pools explicitly.
+        pool_img: "none"
+        pool_txt: "none"
+        layer_img: 23
+        layer_txt: 24
 
     layer_selection:
         best_only: true

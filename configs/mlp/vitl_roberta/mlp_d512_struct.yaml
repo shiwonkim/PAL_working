@@ -9,6 +9,14 @@ overrides:
     features:
         batch_size: 64
         num_workers: 4
+        # Pin the layer pair (COCO ViT-L -> (23, 24)) to match PAL, skipping
+        # mutual-kNN layer selection. With pool cls/avg the CLS / masked-mean
+        # views are derived from the existing (N, T, D) token caches
+        # (unified-cache fast path), so no multi-layer extraction is needed.
+        pool_img: "cls"
+        pool_txt: "avg"
+        layer_img: 23
+        layer_txt: 24
 
     training:
         alignment_layer_name: "ResLowRankHead"

@@ -691,18 +691,18 @@ class AlignmentTrainer(Trainer):
         train_ds_name = _train_dataset_name(self.train_dataset)
         val_ds_name = _train_dataset_name(self.val_dataset)
 
+        # SELECTION suffix. Token vs CLS is decided by token_level (not by pool),
+        # so pool_img is always cls/avg here. On the token path this suffix is
+        # unused: the token branch below returns None and the real tokens load
+        # later via _load_token_features_for_layer.
         image_val_suffix = f"val-{pool_img}"
         if self.image_features_val is None:
-            if (
-                pool_img == "none"
-                and cfg_layer_img is not None
-            ):
-                image_val_suffix += f"_layer-{cfg_layer_img}"
             image_val_suffix += res_tag
 
             image_features_val = None
-            if cfg_layer_img is not None and pool_img != "none":
-                # Try unified-cache-derived CLS first (avoids multi-layer extraction).
+            if cfg_layer_img is not None and not token_level_cfg:
+                # Pinned CLS run: derive CLS from the unified token cache
+                # (avoids multi-layer extraction).
                 derived = self._try_load_image_cls_from_tokens(
                     dataset_name=val_ds_name,
                     split_tag="val",
@@ -726,16 +726,12 @@ class AlignmentTrainer(Trainer):
         else:
             image_features_val = self.image_features_val
 
+        # SELECTION suffix (text has no resolution tag); pool_txt is always avg.
         text_val_suffix = f"val-{pool_txt}"
         if self.text_features_val is None:
-            if (
-                pool_txt == "none"
-                and cfg_layer_txt is not None
-            ):
-                text_val_suffix += f"_layer-{cfg_layer_txt}"
-
             text_features_val = None
-            if cfg_layer_txt is not None and pool_txt != "none":
+            if cfg_layer_txt is not None and not token_level_cfg:
+                # Pinned CLS run: derive masked-mean from the token cache.
                 derived = self._try_load_text_avg_from_tokens(
                     dataset_name=val_ds_name,
                     split_tag="val",
@@ -758,7 +754,7 @@ class AlignmentTrainer(Trainer):
 
         if self.image_features_train is None:
             image_features_train = None
-            if cfg_layer_img is not None and pool_img != "none":
+            if cfg_layer_img is not None and not token_level_cfg:
                 derived = self._try_load_image_cls_from_tokens(
                     dataset_name=train_ds_name,
                     split_tag="train",
@@ -781,7 +777,7 @@ class AlignmentTrainer(Trainer):
 
         if self.text_features_train is None:
             text_features_train = None
-            if cfg_layer_txt is not None and pool_txt != "none":
+            if cfg_layer_txt is not None and not token_level_cfg:
                 derived = self._try_load_text_avg_from_tokens(
                     dataset_name=train_ds_name,
                     split_tag="train",

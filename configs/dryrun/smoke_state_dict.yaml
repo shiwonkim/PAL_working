@@ -19,10 +19,8 @@ overrides:
         num_workers: 4
         img_size: 224
         # fixed layer pair (matches Batch-1 ViT-S/MiniLM) -> skips layer selection.
-        # token_level=true + pinned layers requires pool=none (single-layer token
-        # caches; the CLS/avg pre-load is unused in this mode).
-        pool_img: "none"
-        pool_txt: "none"
+        # token_level (below) decides token-vs-CLS; pool stays the default
+        # cls/avg (selection-only, skipped here).
         layer_img: 11
         layer_txt: 6
 

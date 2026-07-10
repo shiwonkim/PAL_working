@@ -9,10 +9,8 @@ overrides:
         dataset: "coco2017"
         batch_size: 64
         num_workers: 4
-        # token_level=true + pinned layers requires pool=none (single-layer
-        # token caches; the CLS/avg pre-load is unused in this mode).
-        pool_img: "none"
-        pool_txt: "none"
+        # Pinned layer -> selection skipped. token_level (below) decides
+        # token-vs-CLS, so pool stays the default cls/avg (selection-only here).
         layer_img: 23
         layer_txt: 24
 

@@ -9,6 +9,10 @@ overrides:
         dataset: "coco"
         batch_size: 64
         num_workers: 0
+        # Pin the selected layer pair (COCO ViT-L -> (23, 24)), skipping
+        # mutual-kNN layer selection. token_level (below) decides token-vs-CLS.
+        layer_img: 23
+        layer_txt: 24
 
     layer_selection:
         best_only: true

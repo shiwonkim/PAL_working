@@ -13,6 +13,7 @@ import pandas as pd
 import timm
 import torch
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 import torchmetrics
 import wandb
 from loguru import logger
@@ -1574,6 +1575,14 @@ class AlignmentTrainer(Trainer):
             else None
         )
 
+        # Opt-in gradient checkpointing: recompute the alignment forwards in
+        # backward instead of holding their (B,T,K) CAP activations, trading
+        # ~+30-40% step time for a large drop in peak VRAM. Off by default
+        # (faster); enable via training.grad_checkpoint for memory-bound runs
+        # (e.g. PAL k=1024 token @ batch 4096 on a 48 GiB card). Applied at the
+        # call site only, so params / output / checkpoint format are unchanged.
+        use_grad_ckpt = self.config["training"].get("grad_checkpoint", False)
+
         loss_metric = torchmetrics.MeanMetric().to(self.device)
         for i in range(0, num_samples, self.train_batch_size):
             end_i = i + self.train_batch_size
@@ -1610,11 +1619,21 @@ class AlignmentTrainer(Trainer):
             # forward pass through alignment layers. forward(z, mask=None) is
             # uniform across layers, so the call is the same in both modes — the
             # mask is simply None when there are no token features (CLS mode).
-            aligned_image_feats = alignment_image(image_feats)
             text_mask_batch = (
                 text_mask[idx].to(self.device) if text_mask is not None else None
             )
-            aligned_text_feats = alignment_text(text_feats, mask=text_mask_batch)
+            if use_grad_ckpt:
+                # use_reentrant=False so checkpointing works even though the
+                # frozen feature inputs don't require grad (only params do).
+                aligned_image_feats = checkpoint(
+                    alignment_image, image_feats, None, use_reentrant=False
+                )
+                aligned_text_feats = checkpoint(
+                    alignment_text, text_feats, text_mask_batch, use_reentrant=False
+                )
+            else:
+                aligned_image_feats = alignment_image(image_feats)
+                aligned_text_feats = alignment_text(text_feats, mask=text_mask_batch)
 
             # additional unimodal data
             loss_kwargs = {}

@@ -30,6 +30,11 @@ overrides:
             projector_dim: 0
 
         batch_size: 4096
+        # k1024 token CAP OOMs at batch 4096 on a 48 GiB card. Gradient
+        # checkpointing recomputes the alignment forwards in backward instead of
+        # holding the (B,T,K) activations (~+35% time, big VRAM drop). Only this
+        # K needs it; smaller K train fine at 4096 without it.
+        grad_checkpoint: true
 
         clip_loss_name: "CLIPLoss"
         clip_loss:

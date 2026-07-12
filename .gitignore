@@ -331,3 +331,6 @@ configs/pal/vitl_roberta/*_evallocal.yaml
 /configs/dryrun/smoke_cls_pinned.yaml
 /configs/dryrun/smoke_cls_unpinned.yaml
 /configs/dryrun/smoke_eval.yaml
+
+# Claude Code memory backup (host-persistent copy of /root/.claude/.../memory)
+.claude-memory/

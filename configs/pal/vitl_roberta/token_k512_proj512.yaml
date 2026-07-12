@@ -1,0 +1,66 @@
+defaults: !include ../../default.yaml
+
+# Ablation of the projection-free claim: token_k512 baseline + a zero-init
+# BottleneckProjector (projector_dim=512). Identical to token_k512.yaml in every
+# other respect (temp 0.03, batch 4096, (23,24) pin). The projector adds per-token
+# activations that OOM at batch 4096, so grad_checkpoint is enabled to keep the
+# batch matched to the baseline. Single seed 42 to pair with token_k512 seed 42.
+overrides:
+    alignment:
+        llm_model_name: "sentence-transformers/all-roberta-large-v1"
+        lvm_model_name: "vit_large_patch14_dinov2.lvd142m"
+
+    features:
+        dataset: "coco"
+        batch_size: 64
+        num_workers: 0
+        # Pin the selected layer pair (COCO ViT-L -> (23, 24)), skipping
+        # mutual-kNN layer selection. token_level (below) decides token-vs-CLS,
+        # so pool stays the default cls/avg — used only for selection, which is
+        # skipped here; the trainer loads the single-layer token caches.
+        layer_img: 23
+        layer_txt: 24
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    training:
+        token_level: true
+
+        alignment_layer_name: "PALAlignmentLayer"
+        alignment_layer_kwargs:
+            num_anchors: 512
+            pool_temperature: 0.03
+            projector_dim: 512
+
+        batch_size: 4096
+        # Projector activations push k512 over the 48 GiB card at batch 4096;
+        # gradient checkpointing recomputes the alignment forward (projector +
+        # CAP) in backward to fit, keeping batch matched to token_k512.
+        grad_checkpoint: true
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+        visualize_original_embeddings: false
+        log_structural_preservation: false
+
+    evaluation:
+        token_level_zero_shot: true
+        zero_shot_datasets:
+            - "stl10"
+            - "cifar100"
+            - "caltech101"
+            - "dtd"
+            - "eurosat"
+        retrieval_datasets:
+            - "flickr30"
+            - "coco_karpathy"

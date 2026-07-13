@@ -1,0 +1,60 @@
+defaults: !include ../../default.yaml
+
+# Text-family generality: swap the encoder-only sentence-transformer (RoBERTa-
+# large) for a DECODER-ONLY causal LLM (Qwen2.5-0.5B), keeping DINOv2 ViT-L.
+# Prior work (STRUCTURE: raw Llama; SAIL/SOTAlign: decoder-LLM embedders) shows
+# the text encoder is the dominant driver and the diversified axis; PAL currently
+# only has encoder-only ST text, so decoder-only is the family gap to close.
+# Raw Qwen2.5-0.5B matches STRUCTURE's raw-LLM approach and gives clean per-layer
+# hidden states (embedder wrappers do not); Qwen3 is unusable (transformers
+# 4.45.2 doesn't recognize the arch). DINOv2 ViT-L vision cache is reused; only
+# Qwen text features are extracted. No (23,24) pin -> mutual-kNN layer selection.
+overrides:
+    alignment:
+        llm_model_name: "Qwen/Qwen2.5-0.5B"
+        lvm_model_name: "vit_large_patch14_dinov2.lvd142m"
+
+    features:
+        dataset: "coco"
+        batch_size: 64
+        num_workers: 0
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    training:
+        token_level: true
+
+        alignment_layer_name: "PALAlignmentLayer"
+        alignment_layer_kwargs:
+            num_anchors: 512
+            pool_temperature: 0.03
+            projector_dim: 0
+
+        batch_size: 4096
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+        visualize_original_embeddings: false
+        log_structural_preservation: false
+
+    evaluation:
+        token_level_zero_shot: true
+        zero_shot_datasets:
+            - "stl10"
+            - "cifar100"
+            - "caltech101"
+            - "dtd"
+            - "eurosat"
+        retrieval_datasets:
+            - "flickr30"
+            - "coco_karpathy"

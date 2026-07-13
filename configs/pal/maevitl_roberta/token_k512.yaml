@@ -1,0 +1,56 @@
+defaults: !include ../../default.yaml
+
+# Encoder-family generality (vision axis): swap DINOv2 ViT-L -> MAE ViT-L, keep
+# RoBERTa-large. Tests whether PAL's projection-free alignment holds for a
+# non-DINOv2 (different-SSL) vision encoder at the SAME scale as the main result.
+# RoBERTa text cache is reused; only MAE vision features are new. No (23,24) pin
+# (that pair was DINOv2-specific) -> mutual-kNN layer selection runs.
+overrides:
+    alignment:
+        llm_model_name: "sentence-transformers/all-roberta-large-v1"
+        lvm_model_name: "vit_large_patch16_224.mae"
+
+    features:
+        dataset: "coco"
+        batch_size: 64
+        num_workers: 0
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    training:
+        token_level: true
+
+        alignment_layer_name: "PALAlignmentLayer"
+        alignment_layer_kwargs:
+            num_anchors: 512
+            pool_temperature: 0.03
+            projector_dim: 0
+
+        batch_size: 4096
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+        visualize_original_embeddings: false
+        log_structural_preservation: false
+
+    evaluation:
+        token_level_zero_shot: true
+        zero_shot_datasets:
+            - "stl10"
+            - "cifar100"
+            - "caltech101"
+            - "dtd"
+            - "eurosat"
+        retrieval_datasets:
+            - "flickr30"
+            - "coco_karpathy"

@@ -297,6 +297,16 @@ class FeatureStore:
             image_transform=image_transform,
         )
 
+        # get_text_features / load_or_build_text_mask set the shared dataset to
+        # TXT_ONLY (an image-load-skipping optimization) and never restore it. If
+        # one of those ran first in this process (e.g. token-mode layer selection
+        # extracting text before the selected image layer's tokens), the dataset
+        # is stuck in TXT_ONLY and __getitem__ returns dummy empty image tensors
+        # -> (B, 0) batches -> the DINOv2 forward's x.shape[2] check raises
+        # IndexError. Image extraction needs real images, so force STANDARD here.
+        if hasattr(loader.dataset, "loading_type"):
+            loader.dataset.loading_type = LoadingType.STANDARD
+
         # Image-side dedup at extraction: pool=none caches duplicate the same
         # image 5x in COCO (one row per caption). Detect that and iterate
         # only the first-occurrence rows of each unique image_path. Saves

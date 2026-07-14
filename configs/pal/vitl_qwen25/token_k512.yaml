@@ -18,6 +18,20 @@ overrides:
         dataset: "coco"
         batch_size: 64
         num_workers: 0
+        # Pin (23, 23): mutual-kNN selected (22, 23) but the DINOv2 image-token
+        # cache only exists for layer 23, and extracting a new image layer hits a
+        # bug in the extraction path (under debug). (23, 23) scored 0.0930 vs the
+        # (22, 23) optimum 0.0937 — 0.7% apart, effectively identical — so pinning
+        # image 23 (cached) sidesteps the extraction while keeping the selected
+        # text layer 23. Skips layer selection.
+        layer_img: 23
+        layer_txt: 23
+        # Decoder-only causal LLM: use last-token pooling (the conventional choice
+        # for decoder LLMs — only the final token attends to the full sequence)
+        # for the mutual-kNN layer-selection features, instead of the default avg.
+        # The tokenizer left-pads, so the last position IS the real last token.
+        # Only affects layer selection; token-level PAL/CAP uses all tokens.
+        pool_txt: "last"
 
     layer_selection:
         best_only: true

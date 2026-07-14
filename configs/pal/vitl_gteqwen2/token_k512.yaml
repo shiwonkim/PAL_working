@@ -1,0 +1,61 @@
+defaults: !include ../../default.yaml
+
+# Text-family diversity (embedder axis): DINOv2 ViT-L + GTE-Qwen2-1.5B-instruct,
+# a decoder-LLM-based EMBEDDING model (Qwen2-1.5B backbone, contrastively
+# finetuned for embeddings; the exact model SAIL used in its probing sweep).
+# Complements the raw decoder point (Qwen2.5-0.5B): together with RoBERTa-large
+# this spans encoder-only-ST / raw-causal / causal-embedder text families across
+# hidden dims (1024 / 896 / 1536) — diversity over control, matching prior work.
+# AutoModel returns the base Qwen2Model, so per-layer hidden states extract
+# cleanly (verified). last-token pooling for layer selection (decoder + it is how
+# the embedder pools); tokenizer left-pads. DINOv2 vision cache reused; no pin.
+overrides:
+    alignment:
+        llm_model_name: "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
+        lvm_model_name: "vit_large_patch14_dinov2.lvd142m"
+
+    features:
+        dataset: "coco"
+        batch_size: 64
+        num_workers: 0
+        pool_txt: "last"
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    training:
+        token_level: true
+
+        alignment_layer_name: "PALAlignmentLayer"
+        alignment_layer_kwargs:
+            num_anchors: 512
+            pool_temperature: 0.03
+            projector_dim: 0
+
+        batch_size: 4096
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+        visualize_original_embeddings: false
+        log_structural_preservation: false
+
+    evaluation:
+        token_level_zero_shot: true
+        zero_shot_datasets:
+            - "stl10"
+            - "cifar100"
+            - "caltech101"
+            - "dtd"
+            - "eurosat"
+        retrieval_datasets:
+            - "flickr30"
+            - "coco_karpathy"

@@ -190,4 +190,4 @@ evaluation:
 
     retrieval_datasets:
         - "flickr30"
-        - "coco"
+        - "coco_karpathy"

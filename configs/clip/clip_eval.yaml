@@ -26,5 +26,5 @@ overrides:
             - "gtsrb"
             - "country211"
         retrieval_datasets:
-            - "coco"
+            - "coco_karpathy"
             - "flickr30"

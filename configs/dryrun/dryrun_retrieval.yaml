@@ -62,4 +62,4 @@ overrides:
         drop_duplicates: true
         zero_shot_datasets: []
         retrieval_datasets:
-            - "coco"
+            - "coco_karpathy"

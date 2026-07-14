@@ -18,6 +18,15 @@ overrides:
         dataset: "coco"
         batch_size: 64
         num_workers: 0
+        # Pin (23, 28) instead of mutual-kNN selection. SAIL uses GTE-Qwen2 as an
+        # embedder (final-layer last-token embedding), not an intermediate layer;
+        # for an embedder the final layer (28) IS the contrastively-trained
+        # embedding, so pinning text->28 follows SAIL's usage. Image 23 = DINOv2
+        # penultimate, matching every prior selection (RoBERTa/Qwen -> 23) and
+        # already token-cached, so no new vision extraction. Skips the ~12 h
+        # all-layer pooled selection sweep. GTE has 28 layers (hidden 0..28).
+        layer_img: 23
+        layer_txt: 28
         pool_txt: "last"
 
     layer_selection:

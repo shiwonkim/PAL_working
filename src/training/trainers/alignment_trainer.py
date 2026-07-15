@@ -617,29 +617,44 @@ class AlignmentTrainer(Trainer):
         )
         return cls
 
-    def _try_load_text_avg_from_tokens(
-        self, dataset_name: str, split_tag: str, layer_idx: int
+    def _try_load_text_pooled_from_tokens(
+        self, dataset_name: str, split_tag: str, layer_idx: int, pool: str = "avg"
     ) -> Optional[torch.Tensor]:
-        """If a unified text token + mask cache exists, return masked mean."""
+        """If a unified text token (+mask) cache exists, derive the pooled
+        ``(N, D)`` text feature from it without re-running the encoder.
+
+        ``pool="avg"`` -> masked mean over the sequence axis (needs the mask).
+        ``pool="last"`` -> last-token pooling; the decoder tokenizers left-pad,
+        so position ``-1`` is the last real token — identical to the
+        ``pool="last"`` extraction path (``hidden_states[:, -1, :]``), so the
+        derived tensor matches a freshly-extracted ``*-last`` cache.
+        """
         feats_path, mask_path = self._unified_text_token_path(
             dataset_name=dataset_name, split_tag=split_tag, layer_idx=layer_idx
         )
-        if not (feats_path.exists() and mask_path.exists()):
+        if not feats_path.exists():
             return None
-        # mmap=True: see _try_load_image_cls_from_tokens. The masked-mean reduces
-        # the sequence axis, so the result is (N, D) regardless; mmap keeps the
-        # full (N, T, D) token tensor off committed RAM while it is reduced.
+        # mmap=True: see _try_load_image_cls_from_tokens. The reduction over the
+        # sequence axis yields (N, D); mmap keeps the full (N, T, D) token tensor
+        # off committed RAM while it is reduced.
         feats = torch.load(str(feats_path), weights_only=False, mmap=True)["features"]
-        mask = torch.load(str(mask_path), weights_only=False, mmap=True)["mask"]
-        # masked mean over the sequence axis: (feats * mask).sum(1) / mask.sum(1)
-        m = mask.to(dtype=feats.dtype).unsqueeze(-1)
-        denom = m.sum(dim=1).clamp(min=1)
-        avg = (feats * m).sum(dim=1) / denom
+        if pool == "last":
+            pooled = feats[:, -1, :].clone()
+        elif pool == "avg":
+            if not mask_path.exists():
+                return None
+            mask = torch.load(str(mask_path), weights_only=False, mmap=True)["mask"]
+            # masked mean over the sequence axis: (feats * mask).sum(1)/mask.sum(1)
+            m = mask.to(dtype=feats.dtype).unsqueeze(-1)
+            denom = m.sum(dim=1).clamp(min=1)
+            pooled = (feats * m).sum(dim=1) / denom
+        else:
+            raise NotImplementedError(f"unknown text pool for token-derive: {pool}")
         logger.debug(
-            f"Derived masked-mean text features from unified token cache: "
-            f"{feats_path} shape={tuple(avg.shape)} dtype={avg.dtype}"
+            f"Derived {pool}-pooled text features from unified token cache: "
+            f"{feats_path} shape={tuple(pooled.shape)} dtype={pooled.dtype}"
         )
-        return avg
+        return pooled
 
     def prepare_features(
         self,
@@ -733,10 +748,11 @@ class AlignmentTrainer(Trainer):
             text_features_val = None
             if cfg_layer_txt is not None and not token_level_cfg:
                 # Pinned CLS run: derive masked-mean from the token cache.
-                derived = self._try_load_text_avg_from_tokens(
+                derived = self._try_load_text_pooled_from_tokens(
                     dataset_name=val_ds_name,
                     split_tag="val",
                     layer_idx=cfg_layer_txt,
+                    pool=pool_txt,
                 )
                 if derived is not None:
                     text_features_val = derived
@@ -779,10 +795,11 @@ class AlignmentTrainer(Trainer):
         if self.text_features_train is None:
             text_features_train = None
             if cfg_layer_txt is not None and not token_level_cfg:
-                derived = self._try_load_text_avg_from_tokens(
+                derived = self._try_load_text_pooled_from_tokens(
                     dataset_name=train_ds_name,
                     split_tag="train",
                     layer_idx=cfg_layer_txt,
+                    pool=pool_txt,
                 )
                 if derived is not None:
                     text_features_train = derived

@@ -1348,6 +1348,30 @@ class AlignmentTrainer(Trainer):
             alignment_image.set_modality("image")
         if hasattr(alignment_text, "set_modality"):
             alignment_text.set_modality("text")
+
+        # ASIF-style fixed-anchor baseline (Flavor A): install frozen anchors
+        # sampled from ground-truth pairs and skip training entirely. With
+        # projection-free layers and frozen anchors there are no trainable
+        # parameters, so there is nothing to optimise — we go straight to a
+        # checkpoint in the normal format, which src/eval.py loads unchanged.
+        if self.config["training"].get("fix_anchors", False):
+            self._install_and_checkpoint_fixed_anchors(
+                alignment_image=alignment_image,
+                alignment_text=alignment_text,
+                image_features_train=layer_image_features_train,
+                text_features_train=layer_text_features_train,
+                text_mask_train=layer_text_mask_train,
+                image_features_val=layer_image_features_val,
+                text_features_val=layer_text_features_val,
+                text_mask_val=layer_text_mask_val,
+                layer_comb=layer_comb,
+                layer_comb_score=layer_comb_score,
+                layer_comb_str=layer_comb_str,
+                image_dim=image_dim,
+                text_dim=text_dim,
+            )
+            return
+
         if self.config["training"]["wandb_watch"]:
             wandb.watch(models=[alignment_image, alignment_text], log="all")
 
@@ -1530,6 +1554,123 @@ class AlignmentTrainer(Trainer):
         # src/eval.py, which loads this checkpoint and runs evaluate_retrieval /
         # evaluate_zero_shot_classification. Training ends at the saved checkpoint.
 
+    @staticmethod
+    def _pool_anchor_vecs(feats, idx, mask=None):
+        """Select ``idx`` rows and reduce each to a single ``(D,)`` anchor vector.
+
+        CLS/pooled features (2D, ``(N, D)``) are already per-sample vectors and
+        returned as-is. Token features (3D, ``(N, T, D)``) are mean-pooled over
+        tokens (mask-aware for text) into the pooled embedding ASIF uses as an
+        anchor. ``idx`` selects the same rows for image and text so anchor ``k``
+        is a genuine (image, caption) pair.
+        """
+        sel = feats[idx].float()
+        if sel.dim() == 2:
+            return sel  # (K, D) already pooled
+        if mask is not None:
+            m = mask[idx].float().unsqueeze(-1)  # (K, T, 1)
+            return (sel * m).sum(dim=1) / m.sum(dim=1).clamp(min=1)
+        return sel.mean(dim=1)  # (K, D)
+
+    def _install_and_checkpoint_fixed_anchors(
+        self,
+        *,
+        alignment_image,
+        alignment_text,
+        image_features_train,
+        text_features_train,
+        text_mask_train,
+        image_features_val,
+        text_features_val,
+        text_mask_val,
+        layer_comb,
+        layer_comb_score,
+        layer_comb_str,
+        image_dim,
+        text_dim,
+    ):
+        """fit phase D for the ASIF-style fixed-anchor baseline (no training).
+
+        Installs frozen anchors sampled from ground-truth pairs — image-anchor-k
+        and text-anchor-k are the SAME train row, exactly as in ASIF (the anchor
+        correspondence is GIVEN by the data instead of LEARNED). Sampling is a
+        plain random subset of the paired rows, matching ASIF's default recipe;
+        the anchor-set size ``num_anchors`` (and optional ``topk`` / exponent on
+        the layer) are what vary across the fixed-anchor experiment tiers. Logs
+        one reference val pass and writes a normal-format checkpoint — there is
+        no optimisation (projection-free + frozen anchors ⇒ no trainable params).
+        """
+        K = alignment_image.num_anchors
+        n_train = image_features_train.shape[0]
+        if K > n_train:
+            raise ValueError(
+                f"fix_anchors: num_anchors={K} exceeds available train pairs={n_train}"
+            )
+        # Reproducible random subset; the SAME rows for image and text so each
+        # anchor is a real pair (seeded by random_state for run-to-run parity).
+        g = torch.Generator().manual_seed(int(self.config["random_state"]))
+        anchor_idx = torch.randperm(n_train, generator=g)[:K]
+
+        img_anchor_vecs = self._pool_anchor_vecs(image_features_train, anchor_idx)
+        txt_anchor_vecs = self._pool_anchor_vecs(
+            text_features_train, anchor_idx, mask=text_mask_train
+        )
+        alignment_image.set_anchors_from_data(img_anchor_vecs)
+        alignment_text.set_anchors_from_data(txt_anchor_vecs)
+        logger.info(
+            f"fix_anchors: installed {K} frozen data-paired anchors from "
+            f"{n_train} train pairs (seed {self.config['random_state']}); "
+            f"topk={alignment_image.topk}, sim_exponent={alignment_image.sim_exponent}"
+        )
+
+        # One validation pass for a reference score (no gradient, no training).
+        alignment_image = alignment_image.to(self.device)
+        alignment_text = alignment_text.to(self.device)
+        with torch.no_grad():
+            val_loss = self.validate(
+                epoch=0,
+                train_step=0,
+                image_features=image_features_val,
+                text_features=text_features_val,
+                alignment_image=alignment_image,
+                alignment_text=alignment_text,
+                wandb_prefix=f"{layer_comb_str}/",
+                text_mask=text_mask_val,
+            )
+        logger.info(f"fix_anchors: fixed-anchor reference val loss = {val_loss:.4f}")
+
+        layer_name = self.config["training"]["alignment_layer_name"]
+        layer_kwargs = self.config["training"]["alignment_layer_kwargs"]
+        save_dict = {
+            "epoch": 0,
+            "best_epoch": 0,
+            "train_step": 0,
+            "fix_anchors": True,
+            "anchor_indices": anchor_idx.tolist(),
+            "alignment_text": serialize_alignment_layer(
+                alignment_text,
+                class_name=layer_name,
+                input_dim=text_dim,
+                kwargs=layer_kwargs,
+                modality="text",
+            ),
+            "alignment_image": serialize_alignment_layer(
+                alignment_image,
+                class_name=layer_name,
+                input_dim=image_dim,
+                kwargs=layer_kwargs,
+                modality="image",
+            ),
+            "config": self.config,
+            "loss": self.loss.state_dict(),
+        }
+        save_checkpoint(
+            run_dir=self.save_path
+            / wandb.run.name
+            / f"{layer_comb}_{layer_comb_score:.4f}_seed{self.config['random_state']}",
+            save_dict=save_dict,
+            epoch=0,
+        )
 
     def train(
         self,

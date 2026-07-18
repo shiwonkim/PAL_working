@@ -55,6 +55,9 @@ class PALAlignmentLayer(BaseAlignmentLayer):
         init_method: str = "random",
         dim_alignment: int | None = None,
         pool_method: str = "cap",
+        fix_anchors: bool = False,
+        topk: int | None = None,
+        sim_exponent: float = 1.0,
     ):
         super().__init__(input_dim=input_dim)
 
@@ -67,6 +70,12 @@ class PALAlignmentLayer(BaseAlignmentLayer):
         self.projector_dim = projector_dim
         self.init_method = init_method
         self.pool_method = pool_method
+        # ASIF-style fixed-anchor baseline knobs (all no-op by default so
+        # learnable PAL is unchanged): fix_anchors stops anchor gradients,
+        # topk sparsifies the profile, sim_exponent re-weights kept similarities.
+        self.fix_anchors = fix_anchors
+        self.topk = topk
+        self.sim_exponent = sim_exponent
 
         self.anchors = nn.Parameter(torch.empty(num_anchors, input_dim))
         if init_method in ("random", "normal"):
@@ -75,10 +84,47 @@ class PALAlignmentLayer(BaseAlignmentLayer):
             raise ValueError(f"Unknown init_method: {init_method}")
         with torch.no_grad():
             self.anchors.data = F.normalize(self.anchors.data, dim=-1)
+        if fix_anchors:
+            self.anchors.requires_grad_(False)
 
         self.projector = (
             BottleneckProjector(input_dim, projector_dim) if projector_dim > 0 else None
         )
+
+    def set_anchors_from_data(self, vecs: torch.Tensor) -> None:
+        """Install fixed, data-derived anchors (ASIF-style) and freeze them.
+
+        ``vecs`` are ``(num_anchors, input_dim)`` pooled embeddings sampled from
+        ground-truth pairs; they are L2-normalized and copied into ``anchors``,
+        which is then frozen. Used by the fixed-anchor (Flavor A) baseline so
+        that image-anchor-k and text-anchor-k are a real (image, caption) pair,
+        exactly as in ASIF — instead of the correspondence being learned.
+        """
+        with torch.no_grad():
+            v = F.normalize(
+                vecs.to(dtype=self.anchors.dtype, device=self.anchors.device), dim=-1
+            )
+            if v.shape != self.anchors.shape:
+                raise ValueError(
+                    f"anchor shape {tuple(v.shape)} != {tuple(self.anchors.shape)}"
+                )
+            self.anchors.data.copy_(v)
+        self.anchors.requires_grad_(False)
+
+    def _postprocess(self, profile: torch.Tensor) -> torch.Tensor:
+        """ASIF-style sparsify + exponentiate the profile, then L2-normalize.
+
+        No-op (just normalize, matching the original PAL) unless ``topk`` or
+        ``sim_exponent`` are configured.
+        """
+        topk = getattr(self, "topk", None)
+        if topk is not None and topk < profile.shape[-1]:
+            vals, idx = profile.topk(topk, dim=-1)  # ASIF (i): keep top-k, zero rest
+            profile = torch.zeros_like(profile).scatter_(-1, idx, vals)
+        p = getattr(self, "sim_exponent", 1.0)
+        if p != 1.0:
+            profile = profile.clamp(min=0).pow(p)  # ASIF (ii): exponent on kept sims
+        return F.normalize(profile, dim=-1)
 
     def forward(
         self,
@@ -91,7 +137,7 @@ class PALAlignmentLayer(BaseAlignmentLayer):
             z_norm = F.normalize(z, dim=-1)
             a_norm = F.normalize(self.anchors, dim=-1)
             profile = z_norm @ a_norm.T  # (B, K)
-            return F.normalize(profile, dim=-1)
+            return self._postprocess(profile)
 
         # Token-level path: z is (B, T, D)
         if self.projector is not None:
@@ -107,7 +153,7 @@ class PALAlignmentLayer(BaseAlignmentLayer):
                 profile = (sim * mask_f).sum(dim=1) / mask_f.sum(dim=1).clamp(min=1)
             else:
                 profile = sim.mean(dim=1)             # (B, K)
-            return F.normalize(profile, dim=-1)
+            return self._postprocess(profile)
 
         # CAP path (default)
         logits = sim / self.pool_temperature         # (B, T, K)
@@ -121,4 +167,4 @@ class PALAlignmentLayer(BaseAlignmentLayer):
         attn = attn.nan_to_num(0.0)                   # all-masked safety
 
         profile = (attn * sim).sum(dim=1)            # (B, K)
-        return F.normalize(profile, dim=-1)
+        return self._postprocess(profile)

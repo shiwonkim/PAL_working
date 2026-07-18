@@ -1,0 +1,63 @@
+# ASIF-style fixed-anchor baseline — Tier 1 (matched-K ablation), pooled (CLS).
+# Frozen, data-paired anchors on pooled embeddings — the closest apples-to-apples
+# ASIF-equivalent at matched K. Compare against a learned pooled PAL (CLS) run at
+# the same K to isolate the effect of learning the anchors.
+#
+# Tiers 2/3 (ASIF-faithful large-n, efficiency sweep) are parameter variants of
+# THIS file: raise num_anchors and set topk / sim_exponent in
+# alignment_layer_kwargs (large n must stay pooled — CAP would blow up (B,T,n)).
+defaults: !include ../../default.yaml
+
+overrides:
+    alignment:
+        llm_model_name: "sentence-transformers/all-roberta-large-v1"
+        lvm_model_name: "vit_large_patch14_dinov2.lvd142m"
+
+    features:
+        dataset: "coco"
+        batch_size: 64
+        num_workers: 0
+        # Same pinned pair as PAL (23, 24); pooled cls/avg of these layers.
+        layer_img: 23
+        layer_txt: 24
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    training:
+        token_level: false         # pooled (CLS) — ASIF-equivalent cell
+        fix_anchors: true          # frozen data-paired anchors, skip training
+
+        alignment_layer_name: "PALAlignmentLayer"
+        alignment_layer_kwargs:
+            num_anchors: 512        # Tier 1: matched K. Tier 2/3: raise this.
+            projector_dim: 0
+            fix_anchors: true
+            # ASIF-faithful knobs (Tier 2) — off by default:
+            # topk: 800
+            # sim_exponent: 4.0
+
+        batch_size: 4096
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+    evaluation:
+        token_level_zero_shot: false
+        zero_shot_datasets:
+            - "stl10"
+            - "cifar100"
+            - "caltech101"
+            - "dtd"
+            - "eurosat"
+        retrieval_datasets:
+            - "flickr30"
+            - "coco_karpathy"

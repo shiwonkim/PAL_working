@@ -1,0 +1,58 @@
+# ASIF-style fixed-anchor baseline — Tier 1 (matched-K ablation), CAP pooling.
+# Frozen, data-paired anchors + CAP token pooling at the SAME K and layers as
+# PAL token_k512, so the only variable vs PAL is fixed-vs-learned anchors.
+# No training: projection-free + frozen anchors => no trainable params.
+defaults: !include ../../default.yaml
+
+overrides:
+    alignment:
+        llm_model_name: "sentence-transformers/all-roberta-large-v1"
+        lvm_model_name: "vit_large_patch14_dinov2.lvd142m"
+
+    features:
+        dataset: "coco"
+        batch_size: 64
+        num_workers: 0
+        # Same pinned pair as PAL (23, 24) — the fixed-anchor ablation must run
+        # on identical features so fixed-vs-learned is the only difference.
+        layer_img: 23
+        layer_txt: 24
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    training:
+        token_level: true          # CAP pooling (fixed/CAP cell)
+        fix_anchors: true          # frozen data-paired anchors, skip training
+
+        alignment_layer_name: "PALAlignmentLayer"
+        alignment_layer_kwargs:
+            num_anchors: 512        # same K as PAL token_k512
+            pool_temperature: 0.03
+            projector_dim: 0
+            fix_anchors: true
+
+        batch_size: 4096
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+    evaluation:
+        token_level_zero_shot: true
+        zero_shot_datasets:
+            - "stl10"
+            - "cifar100"
+            - "caltech101"
+            - "dtd"
+            - "eurosat"
+        retrieval_datasets:
+            - "flickr30"
+            - "coco_karpathy"

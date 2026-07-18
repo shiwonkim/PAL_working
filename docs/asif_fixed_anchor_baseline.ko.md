@@ -5,6 +5,46 @@
 > 통제 비교한다. 참고 구현: `ASIF/`(공식 레포, 로컬 전용 클론 — `.git/info/exclude`),
 > 논문 `ref_papers/ASIF.pdf`.
 
+## 0. 구현 현황 & 갱신된 이해 (2026-07-18) — ⭐ 이 섹션이 최신
+
+아래 §1–§10은 최초 설계 노트다(Flavor A/B 병기, `freeze_anchors` 등 옛 명칭 포함).
+실제 구현·이해는 이 섹션이 최신이며, 상충 시 이 섹션이 우선한다.
+
+**구현 완료 (commit `6155b88`, Flavor A만 채택 — B는 흡수됨).**
+- `pal.py`: kwargs `fix_anchors`(← 옛 `freeze_anchors`) / `topk` / `sim_exponent`,
+  `set_anchors_from_data()`, `_postprocess()`(topk+exponent, 기본 no-op이라 learnable
+  PAL은 bit-identical). forward 3개 return이 `_postprocess` 경유.
+- `alignment_trainer.py`: `training.fix_anchors`면 빌드 직후 데이터쌍 anchor 주입 +
+  **학습 전체 skip**(projection-free+동결 ⇒ trainable 0개) + 체크포인트. 헬퍼
+  `_install_and_checkpoint_fixed_anchors` / `_pool_anchor_vecs`.
+- configs: `configs/asif/vitl_roberta/{fixed_cap,fixed_pooled}.yaml`.
+- end-to-end 검증됨(512 data-paired anchor 주입 → 체크포인트 → eval 로드).
+
+**갱신된 이해 (ASIF 재독 결과):**
+1. **fixed anchor는 pooled 본질.** ASIF의 정렬은 학습이 아니라 **paired anchor의
+   기하학적 귀결**이다: 이미지는 anchor-이미지에, 텍스트는 anchor-텍스트에 유사도를
+   재되 anchor `k`가 같은 쌍이라 `r_img(x*) ≈ r_txt(y*)` (∵ "비슷한 이미지↔비슷한
+   캡션"). `sim(·,·)`은 **pooled 단일벡터 코사인** — ASIF엔 token 개념이 없다.
+2. **`fixed_cap` = ablation, "token-ASIF"가 아님.** 고정 anchor + CAP은 near-chance
+   (val≈7.98). CAP의 softmax pooling은 *학습된* query anchor를 요구하므로, 이 셀은
+   "CAP은 학습된 anchor에 의존한다"를 보이는 ablation이지 ASIF의 토큰판이 아니다.
+3. **`fixed_pooled` = 진짜 ASIF-등가.** 충실 재현 = **큰 n + `topk` + `sim_exponent`**.
+4. **eval은 PAL과 동일** — 이미지 상대표현 vs (클래스 캡션) 상대표현을 같은 anchor
+   공간에서 비교·argmax (`ASIF/relreps.py:zero_shot_classification`의 einsum→argmax).
+   → 우리 `eval.py`의 retrieval/zero-shot 루프가 정확한 아날로그.
+5. **ASIF의 validation-튜닝 파라미터는 딱 2개**: `k`=`non_zeros`(top-k sparsify, ~수백)
+   와 `p`=`val_exps`(exponent, ≥1; 데모 8). 우리 매핑 = `topk`, `sim_exponent`.
+   anchor 개수 `n`은 튜닝이라기보다 **sweep 축**(data-efficiency 곡선), anchor의
+   *정체*는 랜덤 고정(resample 탐색 안 함).
+
+**실행 3 티어** (모두 같은 트레이너 코드, config 값만 다름):
+| 티어 | config | 목적 |
+|---|---|---|
+| ① matched-K | `num_anchors=512`, topk/exp 없음 (pooled & CAP) | 동일 K에서 fixed vs learned 격리 (H1) |
+| ② ASIF-faithful | `num_anchors` 큼(≤82K=COCO train), `topk`(~800)+`sim_exponent`(p, val 튜닝), **pooled** | ASIF 본연 재현 |
+| ③ 효율 sweep | `num_anchors ∈ {512,2K,8K,82K}` (pooled) | learned-512 vs fixed-n = 효율 우위 (H2) |
+(주의: ②③의 큰 n은 **pooled 전용** — CAP면 `(B,T,n)` 폭발.)
+
 ## 1. 동기 — 왜 이 비교가 (거의) 필수인가
 
 PAL은 relative-representation 계보의 연장이다:

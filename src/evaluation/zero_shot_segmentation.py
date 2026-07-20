@@ -390,14 +390,17 @@ class PALAnchorCodebookMethod(SegmentationMethod):
     name = "anchor_codebook"
     pool_txt = "none"
 
-    def __init__(self, alignment_image, alignment_text, token_level: bool = True):
+    def __init__(self, alignment_image, alignment_text, token_level: bool = True,
+                 pool_txt: str = "avg"):
         self.alignment_image = alignment_image
         self.alignment_text = alignment_text
         self.decoding = "factorized"
         # CLS-vs-token is a config choice, not a class property (the merged
         # PALAlignmentLayer serves both): the text templates must be encoded the
-        # same way the checkpoint's text side was trained.
+        # same way the checkpoint's text side was trained — token when
+        # token_level, else the config pool (avg/last), not a hardcoded avg.
         self.token_level = token_level
+        self.pool_txt = pool_txt
 
     def get_patch_features(self, layer_feats, device):
         with torch.no_grad():
@@ -425,7 +428,7 @@ class PALAnchorCodebookMethod(SegmentationMethod):
             alignment_layer=self.alignment_text,
             num_classes_per_batch=8,
             device=device,
-            pool_txt="none" if self.token_level else "avg",
+            pool_txt="none" if self.token_level else self.pool_txt,
             save_path=None,
             token_level=self.token_level,
         ).to(device)
@@ -916,6 +919,7 @@ def build_method(
         return PALAnchorCodebookMethod(
             alignment_image=alignment_image, alignment_text=alignment_text,
             token_level=bool(cfg["training"].get("token_level", False)),
+            pool_txt=pool_txt,
         )
     if name == "linear_perpatch":
         if alignment_image is None:

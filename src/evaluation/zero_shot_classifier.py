@@ -148,7 +148,11 @@ def build_zero_shot_classifier(
                             2
                         )
                     elif pool_txt == "last":
-                        class_embeddings = class_embeddings[:, -1, :, :]
+                        # last token, keep the layer axis (BS, Layers, Tokens, Dim)
+                        # -> (BS, Layers, Dim); the layer_index slice happens below.
+                        # (was [:, -1, :, :], which wrongly took the last *layer* and
+                        # left tokens on dim 1, breaking the later layer_index slice.)
+                        class_embeddings = class_embeddings[:, :, -1, :]
                     elif pool_txt == "none":
                         # select only the layer we care about, otherwise we don't have enough memory
                         class_embeddings = class_embeddings[:, layer_index, :, :]

@@ -445,10 +445,17 @@ class LinearPerPatchMethod(SegmentationMethod):
     name = "linear_perpatch"
     pool_txt = "none"
 
-    def __init__(self, alignment_image, alignment_text, decoding: str = "direct"):
+    def __init__(self, alignment_image, alignment_text, decoding: str = "direct",
+                 token_level: bool = False, pool_txt: str = "avg"):
         self.alignment_image = alignment_image
         self.alignment_text = alignment_text
         self.decoding = decoding
+        # For token-level checkpoints (e.g. SAIL) the text side stays token-level.
+        # For CLS baselines (linear/mlp) the text must be pooled the SAME way the
+        # layer was trained (config pool_txt: avg/last) so train/eval pooling match
+        # — otherwise a "last"-trained encoder would be eval'd with avg pooling.
+        self.token_level = token_level
+        self.pool_txt = pool_txt
 
     def get_patch_features(self, layer_feats, device):
         with torch.no_grad():
@@ -490,9 +497,12 @@ class LinearPerPatchMethod(SegmentationMethod):
             alignment_layer=self.alignment_text,
             num_classes_per_batch=8,
             device=device,
-            pool_txt="none",
+            # token-level (SAIL): tokens through the layer (none/True). CLS
+            # (linear/mlp): pool as trained (config pool_txt) and pass 2D, so
+            # eval pooling matches training exactly.
+            pool_txt="none" if self.token_level else self.pool_txt,
             save_path=None,
-            token_level=True,
+            token_level=self.token_level,
         ).to(device)
 
 
@@ -914,6 +924,8 @@ def build_method(
         return LinearPerPatchMethod(
             alignment_image=alignment_image, alignment_text=alignment_text,
             decoding=dec,
+            token_level=bool(cfg["training"].get("token_level", False)),
+            pool_txt=pool_txt,
         )
     raise ValueError(f"unknown method {name!r}")
 

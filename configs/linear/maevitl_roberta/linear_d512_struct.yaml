@@ -1,0 +1,51 @@
+defaults: !include ../../default.yaml
+
+overrides:
+    # Linear d_align=512 + STRUCTURE reg. Vision-axis generality: swap DINOv2
+    # ViT-L -> MAE ViT-L/16 (patch16, different-SSL), keep RoBERTa-large — the
+    # baseline sibling of configs/pal/maevitl_roberta/token_k512.yaml. No (23,24)
+    # pin (that pair was DINOv2-specific) -> mutual-kNN layer selection runs on
+    # the all-layer pooled (cls/avg) caches; the chosen layer's pooled slice
+    # trains. RoBERTa text cache is reused; only MAE vision features are new.
+    alignment:
+        llm_model_name: "sentence-transformers/all-roberta-large-v1"
+        lvm_model_name: "vit_large_patch16_224.mae"
+
+    features:
+        dataset: "coco"
+        batch_size: 64
+        num_workers: 4
+        pool_img: "cls"
+        pool_txt: "avg"
+
+    training:
+        alignment_layer_name: "LinearAlignmentLayer"
+        alignment_layer_kwargs:
+            dim_alignment: 512
+
+        batch_size: 4096
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 10.0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    evaluation:
+        zero_shot_datasets:
+            - "stl10"
+            - "cifar100"
+            - "caltech101"
+            - "dtd"
+            - "eurosat"
+        retrieval_datasets:
+            - "flickr30"
+            - "coco_karpathy"

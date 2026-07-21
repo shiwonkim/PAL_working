@@ -1,0 +1,54 @@
+defaults: !include ../../default.yaml
+
+overrides:
+    # ResLowRankHead ("MLP") d_align=512 + STRUCTURE reg. Vision-axis generality:
+    # swap DINOv2 ViT-L -> MAE ViT-L/16 (patch16, different-SSL), keep
+    # RoBERTa-large — the baseline sibling of
+    # configs/pal/maevitl_roberta/token_k512.yaml. No (23,24) pin (DINOv2-specific)
+    # -> mutual-kNN layer selection on the all-layer pooled (cls/avg) caches; the
+    # chosen layer's pooled slice trains. RoBERTa text cache reused; MAE vision new.
+    alignment:
+        llm_model_name: "sentence-transformers/all-roberta-large-v1"
+        lvm_model_name: "vit_large_patch16_224.mae"
+
+    features:
+        dataset: "coco"
+        batch_size: 64
+        num_workers: 4
+        pool_img: "cls"
+        pool_txt: "avg"
+
+    training:
+        alignment_layer_name: "ResLowRankHead"
+        alignment_layer_kwargs:
+            dim_alignment: 512
+            rank: 64
+            dropout_p: 0.1
+            gate_init: 0.0
+
+        batch_size: 4096
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 10.0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    evaluation:
+        zero_shot_datasets:
+            - "stl10"
+            - "cifar100"
+            - "caltech101"
+            - "dtd"
+            - "eurosat"
+        retrieval_datasets:
+            - "flickr30"
+            - "coco_karpathy"

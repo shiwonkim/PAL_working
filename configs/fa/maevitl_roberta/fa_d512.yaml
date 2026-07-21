@@ -1,0 +1,56 @@
+defaults: !include ../../default.yaml
+
+overrides:
+    # FreezeAlign (FA) token-level, embed_dim=512. Vision-axis generality: swap
+    # DINOv2 ViT-L -> MAE ViT-L/16 (patch16, different-SSL), keep RoBERTa-large —
+    # the baseline sibling of configs/pal/maevitl_roberta/token_k512.yaml. No
+    # (23,24) pin (DINOv2-specific) -> mutual-kNN layer selection (on all-layer
+    # pooled caches) picks the pair, then token training runs on that layer.
+    # RoBERTa text cache reused; only MAE vision features are new.
+    alignment:
+        llm_model_name: "sentence-transformers/all-roberta-large-v1"
+        lvm_model_name: "vit_large_patch16_224.mae"
+
+    features:
+        dataset: "coco"
+        batch_size: 64
+        num_workers: 0
+
+    training:
+        token_level: true
+
+        alignment_layer_name: "FAAlignmentLayer"
+        alignment_layer_kwargs:
+            embed_dim: 512
+            dropout: 0.1
+
+        batch_size: 4096
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+        visualize_original_embeddings: false
+        log_structural_preservation: false
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    evaluation:
+        token_level_zero_shot: true
+        zero_shot_datasets:
+            - "stl10"
+            - "cifar100"
+            - "caltech101"
+            - "dtd"
+            - "eurosat"
+        retrieval_datasets:
+            - "flickr30"
+            - "coco_karpathy"

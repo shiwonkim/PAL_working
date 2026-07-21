@@ -552,110 +552,6 @@ class AlignmentTrainer(Trainer):
         )
         return img_feats, txt_feats, txt_mask
 
-    # ---------------------------------------------------------------------
-    # Unified token-cache loaders
-    # ---------------------------------------------------------------------
-    # The unified pipeline extracts (N, T, D) image / (N, S, D) text token
-    # tensors once per (model, dataset, split, layer, img_size). Both the
-    # CLS-style (pool=cls/avg) and the token-level training paths can then
-    # be served from the same files:
-    #   image CLS  -> tokens[:, 0, :]
-    #   image full -> tokens
-    #   text  avg  -> masked mean over the sequence dim
-    #   text  full -> tokens (+ mask)
-    # The helpers below check for a token cache before falling back to the
-    # legacy multi-layer extraction.
-
-    def _unified_image_token_path(
-        self, dataset_name: str, split_tag: str, layer_idx: int
-    ) -> Path:
-        img_size = self.config["features"].get("img_size")
-        res_tag = f"-r{int(img_size)}" if img_size is not None else ""
-        suffix = f"{split_tag}-none_layer-{int(layer_idx)}{res_tag}"
-        return AlignmentTrainer.get_feature_save_path(
-            m_name=self.lvm_model_name,
-            d_name=dataset_name,
-            save_path=self.save_path,
-            suffix=suffix,
-        )
-
-    def _unified_text_token_path(
-        self, dataset_name: str, split_tag: str, layer_idx: int
-    ) -> Tuple[Path, Path]:
-        suffix = f"{split_tag}-none_layer-{int(layer_idx)}"
-        feats_path = AlignmentTrainer.get_feature_save_path(
-            m_name=self.llm_model_name,
-            d_name=dataset_name,
-            save_path=self.save_path,
-            suffix=suffix,
-        )
-        mask_path = feats_path.with_name(
-            feats_path.stem + "_mask" + feats_path.suffix
-        )
-        return feats_path, mask_path
-
-    def _try_load_image_cls_from_tokens(
-        self, dataset_name: str, split_tag: str, layer_idx: int
-    ) -> Optional[torch.Tensor]:
-        """If a unified image token cache exists, return CLS slice (N, D)."""
-        path = self._unified_image_token_path(
-            dataset_name=dataset_name, split_tag=split_tag, layer_idx=layer_idx
-        )
-        if not path.exists():
-            return None
-        # mmap=True: the unified token cache is large (ViT-L COCO train is ~44
-        # GB); memory-map it so deriving the CLS slice pages in only the rows it
-        # touches instead of loading the whole tensor into committed RAM.
-        payload = torch.load(str(path), weights_only=False, mmap=True)
-        feats = payload["features"]
-        # tokens[:, 0, :] is the CLS token under DINOv2's standard layout.
-        # .contiguous() materialises just the (N, D) CLS slice off the mmap.
-        cls = feats[:, 0, :].contiguous()
-        logger.debug(
-            f"Derived CLS from unified token cache: {path} "
-            f"shape={tuple(cls.shape)} dtype={cls.dtype}"
-        )
-        return cls
-
-    def _try_load_text_pooled_from_tokens(
-        self, dataset_name: str, split_tag: str, layer_idx: int, pool: str = "avg"
-    ) -> Optional[torch.Tensor]:
-        """If a unified text token (+mask) cache exists, derive the pooled
-        ``(N, D)`` text feature from it without re-running the encoder.
-
-        ``pool="avg"`` -> masked mean over the sequence axis (needs the mask).
-        ``pool="last"`` -> last-token pooling; the decoder tokenizers left-pad,
-        so position ``-1`` is the last real token — identical to the
-        ``pool="last"`` extraction path (``hidden_states[:, -1, :]``), so the
-        derived tensor matches a freshly-extracted ``*-last`` cache.
-        """
-        feats_path, mask_path = self._unified_text_token_path(
-            dataset_name=dataset_name, split_tag=split_tag, layer_idx=layer_idx
-        )
-        if not feats_path.exists():
-            return None
-        # mmap=True: see _try_load_image_cls_from_tokens. The reduction over the
-        # sequence axis yields (N, D); mmap keeps the full (N, T, D) token tensor
-        # off committed RAM while it is reduced.
-        feats = torch.load(str(feats_path), weights_only=False, mmap=True)["features"]
-        if pool == "last":
-            pooled = feats[:, -1, :].clone()
-        elif pool == "avg":
-            if not mask_path.exists():
-                return None
-            mask = torch.load(str(mask_path), weights_only=False, mmap=True)["mask"]
-            # masked mean over the sequence axis: (feats * mask).sum(1)/mask.sum(1)
-            m = mask.to(dtype=feats.dtype).unsqueeze(-1)
-            denom = m.sum(dim=1).clamp(min=1)
-            pooled = (feats * m).sum(dim=1) / denom
-        else:
-            raise NotImplementedError(f"unknown text pool for token-derive: {pool}")
-        logger.debug(
-            f"Derived {pool}-pooled text features from unified token cache: "
-            f"{feats_path} shape={tuple(pooled.shape)} dtype={pooled.dtype}"
-        )
-        return pooled
-
     def prepare_features(
         self,
         n_random_subsample_train: Optional[int] = None,
@@ -691,21 +587,11 @@ class AlignmentTrainer(Trainer):
         cfg_layer_img = self.config["features"].get("layer_img")
         cfg_layer_txt = self.config["features"].get("layer_txt")
 
-        # Unified-cache fast path: when the layer is pinned and a
-        # (N, T, D) token cache already exists, derive the (N, D)
-        # CLS / masked-mean view from it and skip the multi-layer
-        # extraction. Also when token_level=true, skip the CLS pre-load
-        # entirely — the token override later in fit() supplies the
-        # real tensors and the CLS pre-load is wasted compute.
+        # When token_level=true, skip the CLS pre-load entirely — the token
+        # override later in fit() supplies the real (N, T, D) tensors and the
+        # CLS pre-load would be wasted compute. Otherwise (CLS mode) the pooled
+        # cache is loaded via get_{image,text}_features (load-or-extract).
         token_level_cfg = self.token_level
-
-        def _train_dataset_name(loader):
-            if hasattr(loader.dataset, "name"):
-                return loader.dataset.name
-            return type(loader.dataset).__name__
-
-        train_ds_name = _train_dataset_name(self.train_dataset)
-        val_ds_name = _train_dataset_name(self.val_dataset)
 
         # SELECTION suffix. Token vs CLS is decided by token_level (not by pool),
         # so pool_img is always cls/avg here. On the token path this suffix is
@@ -715,104 +601,64 @@ class AlignmentTrainer(Trainer):
         if self.image_features_val is None:
             image_val_suffix += res_tag
 
-            image_features_val = None
-            if cfg_layer_img is not None and not token_level_cfg:
-                # Pinned CLS run: derive CLS from the unified token cache
-                # (avoids multi-layer extraction).
-                derived = self._try_load_image_cls_from_tokens(
-                    dataset_name=val_ds_name,
-                    split_tag="val",
-                    layer_idx=cfg_layer_img,
+            if token_level_cfg and cfg_layer_img is not None:
+                # Token mode: the real (N, T, D) tokens for the chosen layer
+                # are loaded later in _train_layer_pair. Skip the CLS
+                # pre-load entirely — None flows through the (count-based)
+                # dedup / subsample below and the per-pair loop fills it in.
+                image_features_val = None
+            else:
+                # CLS mode: load the pooled cache (or extract if absent). Any
+                # per-pair rows are deduped to unique by the mask below.
+                image_features_val = self.get_image_features(
+                    loader=self.val_dataset,
+                    lvm_model_name=self.lvm_model_name,
+                    suffix=image_val_suffix,
                 )
-                if derived is not None:
-                    image_features_val = derived
-            if image_features_val is None:
-                if token_level_cfg and cfg_layer_img is not None:
-                    # Token mode: the real (N, T, D) tokens for the chosen layer
-                    # are loaded later in _train_layer_pair. Skip the CLS
-                    # pre-load entirely — None flows through the (count-based)
-                    # dedup / subsample below and the per-pair loop fills it in.
-                    image_features_val = None
-                else:
-                    image_features_val = self.get_image_features(
-                        loader=self.val_dataset,
-                        lvm_model_name=self.lvm_model_name,
-                        suffix=image_val_suffix,
-                    )
         else:
             image_features_val = self.image_features_val
 
         # SELECTION suffix (text has no resolution tag); pool_txt is always avg.
         text_val_suffix = f"val-{pool_txt}"
         if self.text_features_val is None:
-            text_features_val = None
-            if cfg_layer_txt is not None and not token_level_cfg:
-                # Pinned CLS run: derive masked-mean from the token cache.
-                derived = self._try_load_text_pooled_from_tokens(
-                    dataset_name=val_ds_name,
-                    split_tag="val",
-                    layer_idx=cfg_layer_txt,
-                    pool=pool_txt,
+            if token_level_cfg and cfg_layer_txt is not None:
+                # Token mode: real tokens loaded later in _train_layer_pair.
+                text_features_val = None
+            else:
+                # CLS mode: load the pooled cache (or extract if absent).
+                text_features_val = self.get_text_features(
+                    loader=self.val_dataset,
+                    llm_model_name=self.llm_model_name,
+                    suffix=text_val_suffix,
                 )
-                if derived is not None:
-                    text_features_val = derived
-            if text_features_val is None:
-                if token_level_cfg and cfg_layer_txt is not None:
-                    # Token mode: real tokens loaded later in _train_layer_pair.
-                    text_features_val = None
-                else:
-                    text_features_val = self.get_text_features(
-                        loader=self.val_dataset,
-                        llm_model_name=self.llm_model_name,
-                        suffix=text_val_suffix,
-                    )
         else:
             text_features_val = self.text_features_val
 
         if self.image_features_train is None:
-            image_features_train = None
-            if cfg_layer_img is not None and not token_level_cfg:
-                derived = self._try_load_image_cls_from_tokens(
-                    dataset_name=train_ds_name,
-                    split_tag="train",
-                    layer_idx=cfg_layer_img,
+            if token_level_cfg and cfg_layer_img is not None:
+                # Token mode: real tokens loaded later in _train_layer_pair.
+                image_features_train = None
+            else:
+                # CLS mode: load the pooled cache (or extract if absent).
+                image_features_train = self.get_image_features(
+                    loader=self.train_dataset,
+                    lvm_model_name=self.lvm_model_name,
+                    suffix=image_val_suffix.replace("val-", "train-"),
                 )
-                if derived is not None:
-                    image_features_train = derived
-            if image_features_train is None:
-                if token_level_cfg and cfg_layer_img is not None:
-                    # Token mode: real tokens loaded later in _train_layer_pair.
-                    image_features_train = None
-                else:
-                    image_features_train = self.get_image_features(
-                        loader=self.train_dataset,
-                        lvm_model_name=self.lvm_model_name,
-                        suffix=image_val_suffix.replace("val-", "train-"),
-                    )
         else:
             image_features_train = self.image_features_train
 
         if self.text_features_train is None:
-            text_features_train = None
-            if cfg_layer_txt is not None and not token_level_cfg:
-                derived = self._try_load_text_pooled_from_tokens(
-                    dataset_name=train_ds_name,
-                    split_tag="train",
-                    layer_idx=cfg_layer_txt,
-                    pool=pool_txt,
+            if token_level_cfg and cfg_layer_txt is not None:
+                # Token mode: real tokens loaded later in _train_layer_pair.
+                text_features_train = None
+            else:
+                # CLS mode: load the pooled cache (or extract if absent).
+                text_features_train = self.get_text_features(
+                    loader=self.train_dataset,
+                    llm_model_name=self.llm_model_name,
+                    suffix=text_val_suffix.replace("val-", "train-"),
                 )
-                if derived is not None:
-                    text_features_train = derived
-            if text_features_train is None:
-                if token_level_cfg and cfg_layer_txt is not None:
-                    # Token mode: real tokens loaded later in _train_layer_pair.
-                    text_features_train = None
-                else:
-                    text_features_train = self.get_text_features(
-                        loader=self.train_dataset,
-                        llm_model_name=self.llm_model_name,
-                        suffix=text_val_suffix.replace("val-", "train-"),
-                    )
         else:
             text_features_train = self.text_features_train
 

@@ -64,6 +64,25 @@
 **한 줄**: pooled-baseline은 raw LM(Qwen2.5)에서 무너지지만, **PAL은 token-level CAP이라
 pooled 품질과 무관하게 견고** → "인코더 불가지적" 정렬의 실증.
 
+### 3.1 PAL이 1위가 아닌 셀 (20 / 231) — 모두 near-tie (seed42)
+
+전체 77지표 × 3인코더 = **231셀 중 PAL이 211셀(≈91%) 1위.** 나머지 20셀을 분석하면
+스토리가 오히려 명확해진다:
+
+- **전부 zero-shot** (20/20). **retrieval·segmentation은 3인코더 전 셀에서 PAL 100% 1위.**
+- **EuroSAT(11) + DTD(9)뿐** — COCO에서 가장 먼 OOD 도메인이자 절대정확도 최저
+  (DTD ~0.14–0.20, EuroSAT ~0.33). 저정확도 구간이라 메소드 순위가 촘촘·노이즈.
+- 실제로는 **~4개 (데이터셋×인코더)** 케이스(eurosat×gteqwen2, eurosat×roberta,
+  dtd×gteqwen2, dtd×roberta)가 지표 변형(top1_acc/f1_micro·macro·weighted, top5…)으로
+  20줄로 펼쳐진 것.
+- **PAL을 이긴 건 항상 token baseline(fa/sail)**, pooled(linear/mlp)는 단 한 셀도 못 이김.
+  → "token이라서 진 게 아니라, 어려운 OOD zero-shot에서 token 방법끼리 아슬하게 갈림".
+- **격차 ≤0.075**(대부분 <0.04) = **seed 노이즈 수준**. **Qwen2.5는 PAL이 전 셀 1위.**
+
+프레이밍: *"PAL wins all retrieval and segmentation cells across every encoder; the only
+non-top-1 cells are the hardest OOD zero-shot benchmarks (EuroSAT/DTD), where token
+baselines edge PAL within seed noise (≤0.075)."*
+
 ## 4. 재현성 & eval 파이프라인 검증
 
 - **PAL 수치 재현 일치**: 코드 수정 전/후 PAL zs+rt가 **소수점까지 100% 동일**

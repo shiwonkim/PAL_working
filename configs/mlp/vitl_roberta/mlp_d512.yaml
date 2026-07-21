@@ -9,6 +9,13 @@ overrides:
     features:
         batch_size: 64
         num_workers: 4
+        # Pin the layer pair (COCO ViT-L -> (23, 24)) to match PAL and the
+        # mlp_d512_struct sibling, skipping mutual-kNN layer selection so the
+        # struct vs no-struct 2x2 differs ONLY in structure_lambda.
+        pool_img: "cls"
+        pool_txt: "avg"
+        layer_img: 23
+        layer_txt: 24
 
     training:
         alignment_layer_name: "ResLowRankHead"

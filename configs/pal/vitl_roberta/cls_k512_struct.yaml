@@ -1,26 +1,32 @@
 defaults: !include ../../default.yaml
 
+# PAL CLS (K=512) + STRUCTURE reg — the λ=10 cell of the CLS mode × struct 2x2.
+# Pairs with cls_k512.yaml (λ=0, e.g. migrated run scarlet-galaxy-31) and the
+# linear/mlp CLS {struct, no-struct} cells. Pinned to (23,24), pool cls/avg so
+# every cell differs only in {method, structure_lambda}.
 overrides:
-    # Linear d_align=512, ViT-S/14 DINOv2 + MiniLM-L6.
     alignment:
         llm_model_name: "sentence-transformers/all-roberta-large-v1"
         lvm_model_name: "vit_large_patch14_dinov2.lvd142m"
 
     features:
+        dataset: "coco"
         batch_size: 64
-        num_workers: 4
-        # Pin the layer pair (COCO ViT-L -> (23, 24)) to match PAL and the
-        # linear_d512_struct sibling, skipping mutual-kNN layer selection so the
-        # struct vs no-struct 2x2 differs ONLY in structure_lambda.
+        num_workers: 0
         pool_img: "cls"
         pool_txt: "avg"
         layer_img: 23
         layer_txt: 24
 
+    layer_selection:
+        best_only: true
+        last_only: false
+
     training:
-        alignment_layer_name: "LinearAlignmentLayer"
+        # token_level unset -> CLS mode (2D); structure_reg applies out of the box.
+        alignment_layer_name: "PALAlignmentLayer"
         alignment_layer_kwargs:
-            dim_alignment: 512
+            num_anchors: 512
 
         batch_size: 4096
 
@@ -29,21 +35,18 @@ overrides:
             temperature: 0.05
             normalize_latents: true
             warmup_steps: 1000
-            structure_lambda: 0
+            structure_lambda: 10.0
             structure_levels: 1
             structure_margin: 0.0
             structure_weighting: "none"
 
-    layer_selection:
-        best_only: true
-        last_only: false
-
     evaluation:
         zero_shot_datasets:
-            - "cifar10"
             - "stl10"
             - "cifar100"
-            - "mnist"
+            - "caltech101"
+            - "dtd"
+            - "eurosat"
         retrieval_datasets:
             - "flickr30"
             - "coco_karpathy"

@@ -898,6 +898,23 @@ class AlignmentTrainer(Trainer):
         layer_text_mask_train = None
         layer_text_mask_val = None
         if token_level:
+            # Free the all-layer pooled caches (train-cls / train-avg) and their
+            # layer-slice views BEFORE loading the token features. The override
+            # below replaces every layer_* slice with token tensors, so the
+            # pooled features are dead weight from here on. On a no-pin run the
+            # selection step loaded ~85 GB of pooled features; holding them while
+            # mmapping the large (100+ GB) text token cache blows the box's
+            # memory ceiling and the mmap is refused with ENOMEM. Dropping them
+            # first gives the token mmap full headroom. (Pinned runs never load
+            # the pooled caches, so this is a harmless no-op for them.)
+            layer_image_features_train = layer_image_features_val = None
+            layer_text_features_train = layer_text_features_val = None
+            image_features_train = image_features_val = None
+            text_features_train = text_features_val = None
+            self.image_features_train = self.image_features_val = None
+            self.text_features_train = self.text_features_val = None
+            gc.collect()
+
             token_bundle = self._load_token_features_for_layer(
                 img_layer_idx=image_layer_idx,
                 txt_layer_idx=text_layer_idx,

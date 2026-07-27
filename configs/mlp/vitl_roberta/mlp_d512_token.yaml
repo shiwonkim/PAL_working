@@ -8,6 +8,11 @@ overrides:
     features:
         batch_size: 64
         num_workers: 0
+        # Pin (23,24) — same layer pair as PAL + the other vitl_roberta
+        # baselines, so this token-level control is directly comparable
+        # (skips mutual-kNN selection).
+        layer_img: 23
+        layer_txt: 24
 
     training:
         token_level: true

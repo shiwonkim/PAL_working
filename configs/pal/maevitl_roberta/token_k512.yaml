@@ -14,6 +14,13 @@ overrides:
         dataset: "coco"
         batch_size: 64
         num_workers: 0
+        # Pin the pair mutual-kNN selected on the first (no-pin) run: (img=19,
+        # txt=24), score 0.134. Pinning skips the all-layer pooled extraction, so
+        # the trainer does NOT hold the ~57 GB cls caches while mmapping the 146 GB
+        # text token cache — the no-pin path OOMs there under this box's 130 GB
+        # CommitLimit (vm.overcommit_memory=0). Matches the DINOv2 token configs.
+        layer_img: 19
+        layer_txt: 24
 
     layer_selection:
         best_only: true

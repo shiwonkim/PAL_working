@@ -15,6 +15,12 @@ overrides:
         dataset: "coco"
         batch_size: 64
         num_workers: 0
+        # Pin the pair PAL's mutual-kNN selected on MAE: (img=19, txt=24).
+        # Required for token runs: pinning skips the all-layer pooled extraction
+        # so the trainer doesn't hold ~57 GB cls caches while mmapping the 146 GB
+        # text token cache (OOMs under this box's 130 GB CommitLimit otherwise).
+        layer_img: 19
+        layer_txt: 24
 
     training:
         token_level: true

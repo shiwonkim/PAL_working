@@ -17,6 +17,11 @@ overrides:
         num_workers: 4
         pool_img: "cls"
         pool_txt: "avg"
+        # Pin the pair PAL's mutual-kNN selected on MAE: (img=19, txt=24).
+        # Shared across all maevitl methods (selection is encoder-, not
+        # method-dependent) so each cell uses the same layers + reuses caches.
+        layer_img: 19
+        layer_txt: 24
 
     training:
         alignment_layer_name: "LinearAlignmentLayer"

@@ -1,0 +1,56 @@
+defaults: !include ../../default.yaml
+
+overrides:
+    # Cross-scale (base text x large vision): MPNet-base + DINOv2 ViT-L, pinned (img=23, txt=12) from prior mutual-kNN selection. Reuses the existing ViT-L image + MPNet text token/pooled caches; no extraction.
+    # num_workers=0 is mandatory on this box (worker forks are ENOMEM-refused
+    # once encoders + large caches are resident); pinning skips all-layer pooled
+    # extraction so the trainer loads only the pinned single-layer caches.
+    alignment:
+        llm_model_name: "sentence-transformers/all-mpnet-base-v2"
+        lvm_model_name: "vit_large_patch14_dinov2.lvd142m"
+
+    features:
+        dataset: "coco"
+        batch_size: 64
+        num_workers: 0
+        layer_img: 23
+        layer_txt: 12
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    training:
+        token_level: true
+
+        alignment_layer_name: "FAAlignmentLayer"
+        alignment_layer_kwargs:
+            embed_dim: 512
+            dropout: 0.1
+
+        batch_size: 4096
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+        visualize_original_embeddings: false
+        log_structural_preservation: false
+
+    evaluation:
+        token_level_zero_shot: true
+        zero_shot_datasets:
+            - "stl10"
+            - "cifar100"
+            - "caltech101"
+            - "dtd"
+            - "eurosat"
+        retrieval_datasets:
+            - "flickr30"
+            - "coco_karpathy"

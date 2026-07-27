@@ -1,0 +1,60 @@
+defaults: !include ../../default.yaml
+
+overrides:
+    # Single-query attention-pooling (MAP) baseline — the reviewer-requested
+    # "standard cross-attention with learned query" control for CAP (VQng Q1/W2).
+    # vitl_roberta, token-level, pinned (23,24), structure_lambda=0 — same setup
+    # as the other token baselines so it slots directly into the CAP-pooling
+    # ablation grid (see docs/cap_pooling_ablation.ko.md).
+    alignment:
+        llm_model_name: "sentence-transformers/all-roberta-large-v1"
+        lvm_model_name: "vit_large_patch14_dinov2.lvd142m"
+
+    features:
+        batch_size: 64
+        num_workers: 0
+        # Pin (23,24) — same layer pair as PAL + the other vitl_roberta
+        # baselines (skips mutual-kNN selection; directly comparable).
+        layer_img: 23
+        layer_txt: 24
+
+    training:
+        token_level: true
+
+        alignment_layer_name: "AttnPoolAlignmentLayer"
+        alignment_layer_kwargs:
+            dim_alignment: 512
+            num_heads: 8
+            dropout: 0.0
+            mlp_ratio: 4
+
+        batch_size: 4096
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+        visualize_original_embeddings: false
+        log_structural_preservation: false
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    evaluation:
+        token_level_zero_shot: true
+        zero_shot_datasets:
+            - "stl10"
+            - "cifar100"
+            - "caltech101"
+            - "dtd"
+            - "eurosat"
+        retrieval_datasets:
+            - "flickr30"
+            - "coco_karpathy"

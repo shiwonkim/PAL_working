@@ -8,7 +8,7 @@ overrides:
 
     features:
         batch_size: 64
-        num_workers: 4
+        num_workers: 0
         # Pin the layer pair (COCO ViT-L -> (23, 24)) to match PAL, skipping
         # mutual-kNN layer selection. With pool cls/avg the CLS / masked-mean
         # views are derived from the existing (N, T, D) token caches

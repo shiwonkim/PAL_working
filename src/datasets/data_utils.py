@@ -11,6 +11,7 @@ from torch.utils.data import ConcatDataset, DataLoader, Dataset, Subset
 
 from src.datasets.coco_dataset import CocoCaptionDataset
 from src.datasets.flickr30k_dataset import Flickr30kDataset
+from src.datasets.openi_dataset import OpenICaptionDataset
 from src.datasets.quilt_dataset import QuiltCaptionDataset
 
 IMAGENET_DEFAULT_MEAN = (0.485, 0.456, 0.406)
@@ -708,6 +709,22 @@ def get_datasets(dataset, transform, root_dir: Union[str, Path] = "./data", **kw
         )
         train_dataset.name = "quilt1m"
         val_dataset.name = "quilt1m"
+
+    elif dataset == "openi":
+        # OpenI / IU-Xray chest-X-ray image-report pairs (CXR PAL track).
+        # Layout: <data>/openi/*.png + <data>/openi/ecgen-radiology/*.xml.
+        openi_path = os.path.join(data_path, "openi")
+        reports_dir = os.path.join(openi_path, "ecgen-radiology")
+        train_dataset = OpenICaptionDataset(
+            reports_dir=reports_dir, image_dir=openi_path, transform=transform,
+            split="train", **kwargs,
+        )
+        val_dataset = OpenICaptionDataset(
+            reports_dir=reports_dir, image_dir=openi_path, transform=transform,
+            split="val", **kwargs,
+        )
+        train_dataset.name = "openi"
+        val_dataset.name = "openi"
 
     return train_dataset, val_dataset
 

@@ -2386,6 +2386,21 @@ DATASETS_TO_CLASSES = {
         "lymph node",
         "lymph node containing metastatic tumor tissue",
     ],
+    # NCT-CRC-HE (colorectal H&E, 9 tissue classes). Order MUST match
+    # torchvision ImageFolder's alphabetical class ordering of the folder codes
+    # ADI, BACK, DEB, LYM, MUC, MUS, NORM, STR, TUM (Kather et al. 2019). Class
+    # names follow the CONCH / MI-Zero histopathology zero-shot convention.
+    "crc100k": [
+        "adipose",
+        "background",
+        "debris",
+        "lymphocytes",
+        "mucus",
+        "smooth muscle",
+        "normal colon mucosa",
+        "cancer-associated stroma",
+        "colorectal adenocarcinoma epithelium",
+    ],
     "ucf101": [
         "Apply Eye Makeup",
         "Apply Lipstick",
@@ -4395,6 +4410,14 @@ DATASETS_TO_TEMPLATES: Dict[str, Sequence[str]] = {
     ],
     "pcam": [
         "this is a photo of {}",
+    ],
+    # Histopathology H&E prompt ensemble (CONCH / MI-Zero style).
+    "crc100k": [
+        "an H&E image of {}.",
+        "an H&E stained image of {}.",
+        "a histopathology image of {}.",
+        "a photomicrograph showing {}.",
+        "an image of {}.",
     ],
     "ucf101": [
         "a photo of a person {}.",

@@ -35,6 +35,7 @@ def load_dataset(
     label_templates: List[str] = ["a photo of a {label}"],
     template_key: str = "label",
     precompute_captions: bool = True,
+    selection_path: str = None,
 ):
     transform = transforms.Compose(
         [
@@ -45,13 +46,20 @@ def load_dataset(
         ]
     )
 
+    # selection_path (Quilt-1M filtered/subsampled selection) only applies to
+    # datasets whose get_datasets branch accepts it; pass it only when set so
+    # other branches' constructors aren't handed an unexpected kwarg.
+    ds_kwargs = {"selection_path": selection_path} if selection_path else {}
     train_dataset, val_dataset = get_datasets(
         dataset=dataset_name,
         transform=transform,
         root_dir=data_path,
+        **ds_kwargs,
     )
 
-    if dataset_name not in ("coco", "coco2017", "flickr30"):
+    # Caption datasets (real image-text pairs) feed the pipeline directly; only
+    # classification datasets get wrapped with label templates below.
+    if dataset_name not in ("coco", "coco2017", "flickr30", "quilt1m", "openi"):
         train_dataset = ImageTextDataset(
             dataset=train_dataset,
             label_templates=label_templates,
@@ -192,6 +200,7 @@ def run(
         label_templates=config["features"]["label_templates"],
         template_key=config["features"]["template_key"],
         precompute_captions=config["features"]["precompute_captions"],
+        selection_path=config["features"].get("selection_path"),
     )
 
     # Additional single-modality data for structure_reg only (None otherwise;

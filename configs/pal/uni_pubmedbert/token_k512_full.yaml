@@ -12,7 +12,7 @@ overrides:
     features:
         dataset: "quilt1m"
         selection_path:
-            train: "/home/shiwon/STRUCTURE/data/quilt1m/selections/quilt_openpath-quilt_train_conch0.2_seed42.csv"
+            train: "/home/shiwon/STRUCTURE/data/quilt1m/selections/quilt_openpath-quilt_train_full_seed42.csv"
             val: "/home/shiwon/STRUCTURE/data/quilt1m/selections/quilt_openpath-quilt_val_full_seed42.csv"
         batch_size: 64
         num_workers: 0

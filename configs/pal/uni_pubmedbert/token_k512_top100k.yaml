@@ -1,9 +1,9 @@
 defaults: !include ../../default.yaml
 
-# Pathology PAL (headline): frozen UNI (vision) + PubMedBERT (text), token-level
-# K=512, trained on a filtered/subsampled Quilt-1M selection. layer_img/layer_txt
-# are PROVISIONAL last-layer pins for the smoke — replace with mutual-kNN layer
-# selection before the real runs.
+# Pathology PAL — CONCH-quality top-100K selection (whole Quilt-1M train scored
+# by CONCH, top-100K by score >= 0.535 ~ p90). Tests whether quality curation
+# scales better than metadata-only (full) at ~100K. Same UNI+PubMedBERT token
+# K=512 recipe as token_k512_full.yaml; only the train selection differs.
 overrides:
     alignment:
         llm_model_name: "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext"
@@ -12,7 +12,11 @@ overrides:
     features:
         dataset: "quilt1m"
         selection_path:
-            train: "/home/shiwon/STRUCTURE/data/quilt1m/selections/quilt_openpath-quilt_train_conch0.2_seed42.csv"
+            # top-100K CONCH-quality pairs, then dropped the 1,899 captions
+            # > 128 BERT tokens (98.3% pubmed abstracts) so NO truncation is
+            # needed — the pool is natively <=128 tokens (width matches the
+            # other Quilt curves). 98,101 pairs.
+            train: "/home/shiwon/STRUCTURE/data/quilt1m/selections/quilt_openpath-quilt_train_conchtop100k_le128_seed42.csv"
             val: "/home/shiwon/STRUCTURE/data/quilt1m/selections/quilt_openpath-quilt_val_full_seed42.csv"
         batch_size: 64
         num_workers: 0
@@ -29,8 +33,7 @@ overrides:
         alignment_layer_name: "PALAlignmentLayer"
         alignment_layer_kwargs:
             num_anchors: 512
-            pool_temperature: 0.05    # softer than the 0.03 natural-image default —
-                                      # pathology signal is distributed/global (see notes)
+            pool_temperature: 0.05
             projector_dim: 0
 
         batch_size: 4096

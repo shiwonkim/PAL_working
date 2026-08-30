@@ -1,19 +1,21 @@
 defaults: !include ../../default.yaml
 
-# Pathology PAL (headline): frozen UNI (vision) + PubMedBERT (text), token-level
-# K=512, trained on a filtered/subsampled Quilt-1M selection. layer_img/layer_txt
-# are PROVISIONAL last-layer pins for the smoke — replace with mutual-kNN layer
-# selection before the real runs.
+# Pathology PAL -- PathCap clean-source training (curated PubMed figure sub-captions,
+# Sun et al. PathAsst). NO VLM scorer is used to select data: PathCap is curated at
+# the source (per-panel caption assignment), so this is the circularity-free
+# counterpart to the CONCH-scored token_k512_top100k.yaml. Same UNI+PubMedBERT token
+# K=512 recipe; only the dataset/selection differ. Captions >128 BERT tokens dropped
+# (0.61%) so no truncation is needed (pool natively <=128 tokens).
 overrides:
     alignment:
         llm_model_name: "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext"
         lvm_model_name: "hf-hub:MahmoodLab/UNI"
 
     features:
-        dataset: "quilt1m"
+        dataset: "pathcap"
         selection_path:
-            train: "/home/shiwon/STRUCTURE/data/quilt1m/selections/quilt_openpath-quilt_train_conch0.2_seed42.csv"
-            val: "/home/shiwon/STRUCTURE/data/quilt1m/selections/quilt_openpath-quilt_val_full_seed42.csv"
+            train: "/home/shiwon/STRUCTURE/data/pathcap/selections/pathcap_train_le128_seed42.csv"
+            val: "/home/shiwon/STRUCTURE/data/pathcap/selections/pathcap_val_le128_seed42.csv"
         batch_size: 64
         num_workers: 0
         layer_img: 23    # UNI ViT-L last block (0..23)
@@ -29,8 +31,7 @@ overrides:
         alignment_layer_name: "PALAlignmentLayer"
         alignment_layer_kwargs:
             num_anchors: 512
-            pool_temperature: 0.05    # softer than the 0.03 natural-image default —
-                                      # pathology signal is distributed/global (see notes)
+            pool_temperature: 0.05
             projector_dim: 0
 
         batch_size: 4096
@@ -52,5 +53,5 @@ overrides:
         token_level_zero_shot: true
         zero_shot_datasets:
             - "crc100k"
-            - "pcam"
+            - "sicap"
         retrieval_datasets: []

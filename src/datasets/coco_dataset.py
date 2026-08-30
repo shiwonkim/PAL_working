@@ -60,9 +60,17 @@ class CocoCaptionDataset(Dataset):
 
     def apply_tokenizer(self) -> None:
         if self.tokenizer:
+            # Opt-in truncation: only when features.text_max_length is set in the
+            # config (threaded onto the dataset as self.max_length). Left None,
+            # captions are never truncated — an over-length one (e.g. a pubmed
+            # abstract past BERT's 512 positions) raises, so the user must set
+            # max_length or preprocess deliberately rather than lose text silently.
+            max_length = getattr(self, "max_length", None)
             self.tokens = self.tokenizer(
                 list(self.df["captions"].values),
                 padding="longest",
+                truncation=max_length is not None,
+                max_length=max_length,
                 return_tensors="pt",
             )
 

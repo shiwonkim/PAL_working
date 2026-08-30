@@ -34,6 +34,7 @@ from src.datasets.data_utils import (
 )
 from src.evaluation.zero_shot_metadata import (
     DATASETS_TO_CLASSES,
+    DATASETS_TO_SYNONYMS,
     DATASETS_TO_TEMPLATES,
     SIMPLE_PROMPT_TEMPLATE,
 )
@@ -2050,16 +2051,34 @@ class AlignmentTrainer(Trainer):
                 suffix=f"eval-{self.config['features']['pool_txt']}",
             )
 
-            dataset_classes = DATASETS_TO_CLASSES[eval_dataset_name.lower()]
+            _zs_name = eval_dataset_name.lower()
+            # Opt-in synonym ensembling: pass every (synonym) as its own classname
+            # to build one prototype each, then average the synonyms within each
+            # class below. Falls back to the single class name from
+            # DATASETS_TO_CLASSES (original behaviour) when disabled/unavailable.
+            _use_syn = (
+                self.config["evaluation"].get("use_synonyms", False)
+                and _zs_name in DATASETS_TO_SYNONYMS
+            )
+            # dataset_classes stays the TRUE class list (used downstream for the
+            # metric num_classes, per-class logging, plot labels). Only the names
+            # fed to the text encoder are synonym-expanded.
+            dataset_classes = DATASETS_TO_CLASSES[_zs_name]
+            if _use_syn:
+                _syn_groups = DATASETS_TO_SYNONYMS[_zs_name]
+                _build_classnames = [s for grp in _syn_groups for s in grp]
+                _group_sizes = [len(grp) for grp in _syn_groups]
+            else:
+                _build_classnames = dataset_classes
             zero_shot_classifier = build_zero_shot_classifier(
                 language_model=language_model,
                 alignment_layer=alignment_text,
                 tokenizer=tokenizer,
                 dataset=e_dataset,
                 layer_index=text_layer_idx,
-                classnames=dataset_classes,
+                classnames=_build_classnames,
                 templates=(
-                    DATASETS_TO_TEMPLATES[eval_dataset_name.lower()]
+                    DATASETS_TO_TEMPLATES[_zs_name]
                     if self.config["evaluation"]["use_extended_prompts"]
                     else SIMPLE_PROMPT_TEMPLATE
                 ),
@@ -2068,12 +2087,23 @@ class AlignmentTrainer(Trainer):
                 ],
                 device=self.device,
                 pool_txt=self.config["features"]["pool_txt"],
-                save_path=save_path_language,
+                # synonym-expanded text features must not reuse the single-name cache
+                save_path=(None if _use_syn else save_path_language),
                 sample_by_sample_embedding=self.config["evaluation"][
                     "sample_by_sample_embedding"
                 ],
                 token_level=token_level_zero_shot,
             )
+            if _use_syn:
+                # (num_synonyms, D) -> average synonyms within each class ->
+                # (num_classes, D), renormalised so each class anchor is unit-norm.
+                _merged, _i = [], 0
+                for _s in _group_sizes:
+                    _p = zero_shot_classifier[_i:_i + _s].mean(dim=0)
+                    _p = _p / _p.norm(p=2, dim=-1, keepdim=True).clamp_min(1e-12)
+                    _merged.append(_p)
+                    _i += _s
+                zero_shot_classifier = torch.stack(_merged, dim=0)
             # we move it to the cpu since in the loop we move chunks back
             # (used to optimize memory for big models)
             zero_shot_classifier = zero_shot_classifier.float().cpu()

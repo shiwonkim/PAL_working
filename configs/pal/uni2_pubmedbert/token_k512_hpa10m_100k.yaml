@@ -1,0 +1,65 @@
+defaults: !include ../../default.yaml
+
+# HPA10M IHC PAL -- UNI2-h + PubMedBERT (token K=512). The target IHC config: UNI2-h saw IHC in
+# pretraining ("diverse H&E and IHC slides"), unlike UNI v1 (H&E only). Same recipe/data as
+# token_k512_hpa10m.yaml under uni_pubmedbert/; only the vision encoder changes.
+#
+# UNI2-h = ViT-H/14, 1536-d, SwiGLU + SiLU, 8 register tokens -> 265 tokens (1 CLS + 8 reg +
+# 256 patch), depth 24 (last block = 23). Verified torch.fx-traceable via create_feature_extractor
+# with dynamic_img_size=False (see src/models/backbones/vision_models.py _LVM_EXTRA_KWARGS).
+# Token-level CAP pools over all tokens and the PAL layer auto-sizes anchors to D=1536, so no
+# reg-token handling is needed for train/retrieval (only per-patch seg/localization slices [9:]).
+# Feature cache is keyed by model+dataset (hf_hub:MahmoodLab_UNI2-h-hpa10m-...), separate from
+# UNI v1's cache.
+overrides:
+    alignment:
+        llm_model_name: "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext"
+        lvm_model_name: "hf-hub:MahmoodLab/UNI2-h"
+
+    features:
+        dataset: "hpa10m"
+        selection_path:
+            train: "/home/shiwon/STRUCTURE/data/hpa10m/selections/hpa10m_train_whole256_seed42.csv"
+            val: "/home/shiwon/STRUCTURE/data/hpa10m/selections/hpa10m_val_whole256_seed42.csv"
+        batch_size: 64
+        num_workers: 0
+        layer_img: 23    # UNI2-h ViT-H last block (0..23)
+        layer_txt: 12    # PubMedBERT-base last hidden (0..12)
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    training:
+        token_level: true
+
+        alignment_layer_name: "PALAlignmentLayer"
+        alignment_layer_kwargs:
+            num_anchors: 512
+            pool_temperature: 0.05
+            projector_dim: 0
+
+        # UNI2-h tokens are 265x1536 (~2x UNI v1's 197x1024). CAP forward activation at
+        # batch 4096 ≈ 12.4GB (vs UNI v1's 7.7GB at 4096) OOM'd on a busy GPU. batch 2048
+        # ≈ 6.2GB — below UNI v1's stable 4096 footprint, so it fits comfortably, and the
+        # low caption diversity (51% unique) doesn't need a large contrastive batch.
+        batch_size: 2048
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+        visualize_original_embeddings: false
+        log_structural_preservation: false
+
+    evaluation:
+        token_level_zero_shot: true
+        zero_shot_datasets: []
+        retrieval_datasets:
+            - "hpa10m"

@@ -164,7 +164,7 @@ def build_selection(
         if sub is None:
             logger.warning(f"size {N} > pool {len(pool)} — skipped")
             continue
-        path = os.path.join(out_dir, f"quilt_{tag}_{N}_seed{seed}.csv")
+        path = os.path.join(out_dir, f"quilt_{tag}_{split}_{N}_seed{seed}.csv")
         sub.to_csv(path, index=False)
         mix = ", ".join(f"{s}={int((sub['source'] == s).sum())}" for s in sources)
         logger.info(f"wrote {path}  (n={len(sub)}: {mix})")
@@ -178,8 +178,11 @@ def main():
     ap.add_argument("--out_dir", default="data/quilt1m/selections")
     ap.add_argument("--sources", nargs="+", default=["openpath", "quilt"],
                     help="subset sources to include (pubmed/laion excluded by default)")
-    ap.add_argument("--sizes", nargs="+", type=int,
-                    default=[500, 1000, 5000, 10000, 20000, 40000])
+    ap.add_argument("--sizes", nargs="*", type=int,
+                    default=[500, 1000, 5000, 10000, 20000, 40000],
+                    help="nested subsample sizes (empty -> only the full pool)")
+    ap.add_argument("--split", default="train",
+                    help="Quilt lookup split to filter (train / val)")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--word_min", type=int, default=8)
     ap.add_argument("--word_max", type=int, default=40)
@@ -188,7 +191,7 @@ def main():
     args = ap.parse_args()
     build_selection(
         csv_file=args.csv, out_dir=args.out_dir, sources=tuple(args.sources),
-        sizes=tuple(args.sizes), seed=args.seed,
+        sizes=tuple(args.sizes), seed=args.seed, split=args.split,
         word_range=(args.word_min, args.word_max),
         require_path_vocab=not args.no_path_vocab,
     )

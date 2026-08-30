@@ -56,9 +56,13 @@ class ImageTextDataset(Dataset):
 
     def apply_tokenizer(self) -> None:
         if self.tokenizer:
+            # Opt-in truncation via features.text_max_length (see CocoCaptionDataset).
+            max_length = getattr(self, "max_length", None)
             self.tokens = self.tokenizer(
                 list(self.df["captions"].values),
                 padding="longest",
+                truncation=max_length is not None,
+                max_length=max_length,
                 return_tensors="pt",
             )
 

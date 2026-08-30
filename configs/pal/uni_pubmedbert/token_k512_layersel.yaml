@@ -12,12 +12,10 @@ overrides:
     features:
         dataset: "quilt1m"
         selection_path:
-            train: "/home/shiwon/STRUCTURE/data/quilt1m/selections/quilt_openpath-quilt_train_conch0.2_seed42.csv"
+            train: "/home/shiwon/STRUCTURE/data/quilt1m/selections/quilt_openpath-quilt_train_full_seed42.csv"
             val: "/home/shiwon/STRUCTURE/data/quilt1m/selections/quilt_openpath-quilt_val_full_seed42.csv"
         batch_size: 64
         num_workers: 0
-        layer_img: 23    # UNI ViT-L last block (0..23)
-        layer_txt: 12    # PubMedBERT-base last hidden (0..12)
 
     layer_selection:
         best_only: true
@@ -29,8 +27,7 @@ overrides:
         alignment_layer_name: "PALAlignmentLayer"
         alignment_layer_kwargs:
             num_anchors: 512
-            pool_temperature: 0.05    # softer than the 0.03 natural-image default —
-                                      # pathology signal is distributed/global (see notes)
+            pool_temperature: 0.03
             projector_dim: 0
 
         batch_size: 4096

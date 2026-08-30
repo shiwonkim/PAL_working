@@ -18,20 +18,24 @@
 #   CONFIG=configs/pal/vitl_roberta/token_k512.yaml bash rerun_sweep.sh
 set -u
 
-cd /workspace/PAL
+cd /home/shiwon/PAL_working
 
-CONFIG="${CONFIG:-configs/pal/vitl_roberta/token_k512.yaml}"
-GPU="${GPU:-1}"
-SAMPLES="${SAMPLES:-10000 50000}"          # space-separated; ONE process each
-LOGDIR="${LOGDIR:-/tmp/claude-0/-workspace-PAL/40fd14c2-e617-4b63-987d-66669eb1238f/scratchpad/sweep_rerun}"
+# Use the project conda env (torch/loguru/timm live here, not the system python).
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate structure
+
+CONFIG="${CONFIG:-configs/pal/uni_pubmedbert/token_k512.yaml}"
+GPU="${GPU:-0}"
+SAMPLES="${SAMPLES:-500 1000 5000 10000 20000 40000}"   # space-separated; ONE process each
+LOGDIR="${LOGDIR:-$HOME/sweep_rerun_logs}"
 
 mkdir -p "$LOGDIR"
 echo "config=$CONFIG  gpu=$GPU  samples=[$SAMPLES]  logdir=$LOGDIR"
 
 for n in $SAMPLES; do
-    log="$LOGDIR/n${n}.log"
+    log="$LOGDIR/${TAG:-}n${n}.log"
     echo "=== [$(date '+%F %T')] START sample n=$n  (GPU $GPU)  -> $log ==="
-    WANDB_NAME="n${n}" WANDB_MODE=offline WANDB_SILENT=true \
+    WANDB_NAME="${TAG:-}n${n}" WANDB_MODE=offline WANDB_SILENT=true \
     CUDA_VISIBLE_DEVICES="$GPU" \
         python -u -m src.training.train_subset \
             --config_path "$CONFIG" \

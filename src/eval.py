@@ -58,6 +58,9 @@ def main():
     p.add_argument("--token_level_zs", type=str, default=None,
                    choices=["true", "false"],
                    help="Override token_level_zero_shot (default: use config)")
+    p.add_argument("--use_synonyms", type=str, default=None,
+                   choices=["true", "false"],
+                   help="Override evaluation.use_synonyms (per-class synonym ensembling)")
     args = p.parse_args()
 
     # Auto-detect layer indices from checkpoint path, e.g. "(23, 24)_0.2903"
@@ -90,6 +93,9 @@ def main():
         cfg["evaluation"]["token_level_zero_shot"] = override
         cfg["training"]["token_level"] = override
 
+    if args.use_synonyms is not None:
+        cfg["evaluation"]["use_synonyms"] = args.use_synonyms == "true"
+
     # Disable wandb via env (we still need a real offline run because
     # base_trainer reads wandb.run.dir at __init__ time)
     os.environ.setdefault("WANDB_MODE", "offline")
@@ -115,12 +121,17 @@ def main():
     # Minimal train/val loaders needed by the AlignmentTrainer constructor —
     # we never actually train, but the base class reads these. Use the same
     # COCO paths the trained run used (keeps features cache path consistent).
+    _sel = cfg["features"].get("selection_path")
+    _ds_kwargs = {"selection_path": _sel} if _sel else {}
     train_ds, val_ds = get_datasets(
         dataset=cfg["features"]["dataset"],
         transform=pre_transform,
         root_dir=data_path,
+        **_ds_kwargs,
     )
-    if cfg["features"]["dataset"] not in ("coco", "flickr30"):
+    if cfg["features"]["dataset"] not in (
+        "coco", "coco2017", "flickr30", "quilt1m", "pathcap", "archbook", "hpa10m", "hpa10m_cap1", "hpa10m_dedup", "hpa10m_genbal"
+    ):
         train_ds = ImageTextDataset(
             dataset=train_ds,
             label_templates=cfg["features"]["label_templates"],
@@ -169,8 +180,12 @@ def main():
     eval_rt = []
     for name in rt_list:
         try:
+            # In-domain retrieval on the training dataset uses its (val) selection
+            # so the retrieval set matches the filtered train distribution.
+            _rt_kwargs = _ds_kwargs if name == cfg["features"]["dataset"] else {}
             _, ds = get_datasets(
-                dataset=name, transform=get_default_transforms(), root_dir=data_path
+                dataset=name, transform=get_default_transforms(), root_dir=data_path,
+                **_rt_kwargs,
             )
             eval_rt.append((name, ds))
             logger.info(f"  RT loaded '{name}' size={len(ds)}")

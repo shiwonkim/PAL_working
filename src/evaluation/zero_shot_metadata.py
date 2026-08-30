@@ -2401,6 +2401,16 @@ DATASETS_TO_CLASSES = {
         "cancer-associated stroma",
         "colorectal adenocarcinoma epithelium",
     ],
+    # SICAPv2 prostate H&E Gleason grading (Silva-Rodriguez et al. 2020), 4 classes.
+    # Order MUST match torchvision ImageFolder's alphabetical ordering of the
+    # folder codes benign, g3, g4, g5 (built by the sicap prep step). Class names
+    # follow the CONCH / MI-Zero histopathology zero-shot convention.
+    "sicap": [
+        "benign prostate glands",
+        "prostatic adenocarcinoma, Gleason pattern 3",
+        "prostatic adenocarcinoma, Gleason pattern 4",
+        "prostatic adenocarcinoma, Gleason pattern 5",
+    ],
     "ucf101": [
         "Apply Eye Makeup",
         "Apply Lipstick",
@@ -4229,6 +4239,35 @@ DATASETS_TO_CLASSES = {
 }
 
 
+# CONCH's official histopathology template ensemble (22 templates, from
+# mahmoodlab/CONCH prompts/crc100k_prompts_all_per_class.json, "CLASSNAME" -> "{}").
+# Shared by the pathology zero-shot datasets so PAL is evaluated with the SAME
+# prompts as the frozen VLM baselines (scripts/vlm_baselines/).
+_HISTO_TEMPLATES_22 = [
+    "{}.",
+    "a photomicrograph showing {}.",
+    "a photomicrograph of {}.",
+    "an image of {}.",
+    "an image showing {}.",
+    "an example of {}.",
+    "{} is shown.",
+    "this is {}.",
+    "there is {}.",
+    "a histopathological image showing {}.",
+    "a histopathological image of {}.",
+    "a histopathological photograph of {}.",
+    "a histopathological photograph showing {}.",
+    "shows {}.",
+    "presence of {}.",
+    "{} is present.",
+    "an H&E stained image of {}.",
+    "an H&E stained image showing {}.",
+    "an H&E image showing {}.",
+    "an H&E image of {}.",
+    "{}, H&E stain.",
+    "{}, H&E.",
+]
+
 DATASETS_TO_TEMPLATES: Dict[str, Sequence[str]] = {
     "food101": [
         "a photo of {}, a type of food.",
@@ -4411,14 +4450,9 @@ DATASETS_TO_TEMPLATES: Dict[str, Sequence[str]] = {
     "pcam": [
         "this is a photo of {}",
     ],
-    # Histopathology H&E prompt ensemble (CONCH / MI-Zero style).
-    "crc100k": [
-        "an H&E image of {}.",
-        "an H&E stained image of {}.",
-        "a histopathology image of {}.",
-        "a photomicrograph showing {}.",
-        "an image of {}.",
-    ],
+    # Pathology zero-shot: CONCH's official 22-template ensemble (see above).
+    "crc100k": _HISTO_TEMPLATES_22,
+    "sicap": _HISTO_TEMPLATES_22,
     "ucf101": [
         "a photo of a person {}.",
         "a video of a person {}.",
@@ -4589,5 +4623,32 @@ DATASETS_TO_TEMPLATES: Dict[str, Sequence[str]] = {
         "a photo of a cool {}.",
         "a photo of a small {}.",
         "a tattoo of the {}.",
+    ],
+}
+
+
+# Optional per-class SYNONYMS for pathology zero-shot (opt-in via
+# evaluation.use_synonyms). When enabled, the trainer builds one text prototype
+# per (synonym x template), then averages the synonyms within each class -- the
+# same ensemble the frozen VLM baselines use (scripts/vlm_baselines/vlm_official.py).
+# List order MUST match DATASETS_TO_CLASSES (i.e. torchvision ImageFolder order).
+# CRC100K synonyms are CONCH's official set (prompts/crc100k_prompts_all_per_class.json).
+DATASETS_TO_SYNONYMS: Dict[str, Sequence[Sequence[str]]] = {
+    "crc100k": [
+        ["adipose", "adipose tissue", "adipocytes", "fat", "fat cells"],
+        ["background", "penmarking", "empty space", "background artifacts"],
+        ["debris", "colorectal adenocarcinoma debris and necrosis", "necrosis", "necrotic debris"],
+        ["lymphocytes", "lymphoid aggregate", "immune cells", "lymphoid infiltrate", "inflammatory cells"],
+        ["mucus", "mucin", "mucus pool", "mucin pool"],
+        ["smooth muscle", "smooth muscle tissue", "muscle", "muscularis propria", "muscularis mucosa"],
+        ["normal colon mucosa", "uninvolved colon mucosa", "normal colonic mucosa", "benign epithelium"],
+        ["cancer-associated stroma", "tumor-associated stroma", "stromal cells", "stromal tissue", "stroma"],
+        ["colorectal adenocarcinoma epithelium", "colorectal adenocarcinoma", "tumor", "adenocarcinoma", "malignant epithelium"],
+    ],
+    "sicap": [
+        ["benign", "benign prostate glands", "non-cancerous prostate tissue", "benign glands", "normal prostate tissue"],
+        ["Gleason grade 3", "prostate cancer Gleason pattern 3", "prostatic adenocarcinoma Gleason grade 3", "well-formed cancerous glands", "Gleason pattern 3"],
+        ["Gleason grade 4", "prostate cancer Gleason pattern 4", "prostatic adenocarcinoma Gleason grade 4", "fused and cribriform cancerous glands", "Gleason pattern 4"],
+        ["Gleason grade 5", "prostate cancer Gleason pattern 5", "prostatic adenocarcinoma Gleason grade 5", "poorly differentiated prostate carcinoma", "Gleason pattern 5"],
     ],
 }

@@ -506,6 +506,21 @@ def get_datasets(dataset, transform, root_dir: Union[str, Path] = "./data", **kw
         else:
             train_dataset = val_dataset
 
+    elif dataset == "sicap":
+        # SICAPv2 prostate H&E Gleason grading (Silva-Rodriguez et al. 2020).
+        # The prep step (scripts) sorts the official test-partition patches into
+        # ImageFolder subfolders benign/g3/g4/g5 (alphabetical order matches
+        # DATASETS_TO_CLASSES["sicap"]). Zero-shot classifies the test split.
+        sicap_path = os.path.join(data_path, "sicap")
+        val_dataset = dsets.ImageFolder(
+            root=os.path.join(sicap_path, "eval"), transform=transform
+        )
+        train_root = os.path.join(sicap_path, "train")
+        if os.path.isdir(train_root):
+            train_dataset = dsets.ImageFolder(root=train_root, transform=transform)
+        else:
+            train_dataset = val_dataset
+
     elif dataset == "ucf101":
         """
         It requires pip install av pyunpack patool
@@ -695,19 +710,111 @@ def get_datasets(dataset, transform, root_dir: Union[str, Path] = "./data", **kw
         quilt_path = os.path.join(data_path, "quilt1m")
         csv_file = os.path.join(quilt_path, "quilt_1M_lookup.csv")
         image_dir = os.path.join(quilt_path, "images")
-        # selection_path (a pre-built filtered/subsampled selection CSV, see
-        # quilt_selection.py) applies to TRAIN only; val stays the raw val split.
-        selection_path = kwargs.pop("selection_path", None)
+        # selection_path picks pre-built filtered selections (quilt_selection.py).
+        # Accepts a {"train": ..., "val": ...} dict (per-split selections), a bare
+        # string (train only, val = raw split), or None (both raw splits).
+        selection = kwargs.pop("selection_path", None)
+        if isinstance(selection, dict):
+            train_sel, val_sel = selection.get("train"), selection.get("val")
+        elif isinstance(selection, str):
+            train_sel, val_sel = selection, None
+        else:
+            train_sel = val_sel = None
         train_dataset = QuiltCaptionDataset(
             csv_file=csv_file, image_dir=image_dir, transform=transform,
-            split="train", selection_path=selection_path, **kwargs,
+            split="train", selection_path=train_sel, **kwargs,
         )
         val_dataset = QuiltCaptionDataset(
             csv_file=csv_file, image_dir=image_dir, transform=transform,
-            split="val", **kwargs,
+            split="val", selection_path=val_sel, **kwargs,
         )
         train_dataset.name = "quilt1m"
         val_dataset.name = "quilt1m"
+
+    elif dataset == "pathcap":
+        # PathCap pathology image-caption pairs (curated PubMed figure sub-captions,
+        # Sun et al. PathAsst). Clean-source training pool -- captions are already
+        # per-panel curated, so NO VLM scorer is used (contrast with the CONCH-scored
+        # Quilt selections). Reuses QuiltCaptionDataset (loads image_path/caption from
+        # a pre-built selection verbatim). Layout: <data>/pathcap/images/*.jpg with the
+        # selection's image_path a bare filename; selection_path is always supplied.
+        pathcap_path = os.path.join(data_path, "pathcap")
+        image_dir = os.path.join(pathcap_path, "images")
+        selection = kwargs.pop("selection_path", None)
+        if isinstance(selection, dict):
+            train_sel, val_sel = selection.get("train"), selection.get("val")
+        elif isinstance(selection, str):
+            train_sel, val_sel = selection, None
+        else:
+            train_sel = val_sel = None
+        train_dataset = QuiltCaptionDataset(
+            image_dir=image_dir, transform=transform,
+            split="train", selection_path=train_sel, **kwargs,
+        )
+        val_dataset = QuiltCaptionDataset(
+            image_dir=image_dir, transform=transform,
+            split="val", selection_path=val_sel, **kwargs,
+        )
+        train_dataset.name = "pathcap"
+        val_dataset.name = "pathcap"
+
+    elif dataset in ("hpa10m", "hpa10m_cap1", "hpa10m_dedup", "hpa10m_genbal"):
+        # HPA10M IHC image-caption pairs (Human Protein Atlas, nirschl-lab/hpa10m).
+        # Extracted from the WebDataset shards by scripts/prepare_hpa10m.py into a flat
+        # <data>/hpa10m/images/ dir (a mode-specific symlink: whole-core vs native crop)
+        # + selection CSV (image_path = bare filename, caption = chosen variant). Same
+        # QuiltCaptionDataset path as pathcap; captions are curated/templated so no VLM
+        # scorer. selection_path is always supplied (train/val dict).
+        #
+        # ``hpa10m_cap1`` = the SAME images (same image_path order) with the caption_1
+        # variant as the caption column. The distinct dataset name gives it a SEPARATE
+        # feature cache (cache key includes the dataset name), so its text features don't
+        # clobber the generic-caption ones and both variants coexist. The IMAGE features
+        # are identical to hpa10m's (same images/order), so we AVOID re-extracting the
+        # 151GB image cache by symlinking hpa10m_cap1's image .npy to hpa10m's (see the
+        # symlink step alongside token_k512_hpa10m_cap1.yaml); only the (cheap) text
+        # features are re-extracted for caption_1.
+        hpa_path = os.path.join(data_path, "hpa10m")
+        image_dir = os.path.join(hpa_path, "images")
+        selection = kwargs.pop("selection_path", None)
+        if isinstance(selection, dict):
+            train_sel, val_sel = selection.get("train"), selection.get("val")
+        elif isinstance(selection, str):
+            train_sel, val_sel = selection, None
+        else:
+            train_sel = val_sel = None
+        train_dataset = QuiltCaptionDataset(
+            image_dir=image_dir, transform=transform,
+            split="train", selection_path=train_sel, **kwargs,
+        )
+        val_dataset = QuiltCaptionDataset(
+            image_dir=image_dir, transform=transform,
+            split="val", selection_path=val_sel, **kwargs,
+        )
+        train_dataset.name = dataset
+        val_dataset.name = dataset
+
+    elif dataset == "archbook":
+        # ARCH book_set (Gamper & Rajpoot 2021): pathology textbook figure-caption
+        # pairs, the standard zero-shot cross-modal retrieval benchmark. Used as a
+        # retrieval gallery only (the whole set; no train/test split). Verified
+        # <0.1%% caption overlap with the PathCap (PubMed) training pool -- clean.
+        # (ARCH pubmed_set is intentionally NOT used: 22.6%% overlap with PathCap.)
+        arch_path = os.path.join(data_path, "arch")
+        image_dir = os.path.join(arch_path, "books_set", "images")
+        sel = kwargs.pop("selection_path", None) or os.path.join(
+            arch_path, "selections", "arch_book_retrieval.csv"
+        )
+        train_dataset = QuiltCaptionDataset(
+            image_dir=image_dir, transform=transform,
+            split="train", selection_path=sel, **kwargs,
+        )
+        val_dataset = QuiltCaptionDataset(
+            image_dir=image_dir, transform=transform,
+            split="val", selection_path=sel, **kwargs,
+        )
+        train_dataset.name = "archbook"
+        val_dataset.name = "archbook"
 
     return train_dataset, val_dataset
 

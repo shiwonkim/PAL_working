@@ -343,7 +343,7 @@ class FAMethod(SegmentationMethod):
     name = "fa"
     pool_txt = "none"
 
-    def __init__(self, alignment_image, alignment_text, decoding: str = "factorized"):
+    def __init__(self, alignment_image, alignment_text, decoding: str = "direct"):
         self.alignment_image = alignment_image
         self.alignment_text = alignment_text
         self.decoding = decoding
@@ -391,10 +391,10 @@ class PALAnchorCodebookMethod(SegmentationMethod):
     pool_txt = "none"
 
     def __init__(self, alignment_image, alignment_text, token_level: bool = True,
-                 pool_txt: str = "avg"):
+                 pool_txt: str = "avg", decoding: str = "direct"):
         self.alignment_image = alignment_image
         self.alignment_text = alignment_text
-        self.decoding = "factorized"
+        self.decoding = decoding
         # CLS-vs-token is a config choice, not a class property (the merged
         # PALAlignmentLayer serves both): the text templates must be encoded the
         # same way the checkpoint's text side was trained — token when
@@ -908,7 +908,7 @@ def build_method(
     if name == "fa":
         if alignment_image is None:
             raise ValueError("fa method requires --checkpoint")
-        dec = decoding_override if decoding_override else "factorized"
+        dec = decoding_override if decoding_override else "direct"
         return FAMethod(
             alignment_image=alignment_image, alignment_text=alignment_text,
             decoding=dec,
@@ -916,10 +916,11 @@ def build_method(
     if name == "anchor_codebook":
         if alignment_image is None:
             raise ValueError("anchor_codebook requires --checkpoint")
+        dec = decoding_override if decoding_override else "direct"
         return PALAnchorCodebookMethod(
             alignment_image=alignment_image, alignment_text=alignment_text,
             token_level=bool(cfg["training"].get("token_level", False)),
-            pool_txt=pool_txt,
+            pool_txt=pool_txt, decoding=dec,
         )
     if name == "linear_perpatch":
         if alignment_image is None:

@@ -59,7 +59,7 @@ def load_dataset(
 
     # Caption datasets (real image-text pairs) feed the pipeline directly; only
     # classification datasets get wrapped with label templates below.
-    if dataset_name not in ("coco", "coco2017", "flickr30", "quilt1m"):
+    if dataset_name not in ("coco", "coco2017", "flickr30", "quilt1m", "pathcap", "hpa10m", "hpa10m_cap1", "hpa10m_genbal"):
         train_dataset = ImageTextDataset(
             dataset=train_dataset,
             label_templates=label_templates,

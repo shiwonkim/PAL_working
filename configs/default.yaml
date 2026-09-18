@@ -86,7 +86,7 @@ training:
     n_dup_samples: 1
 
     wandb_watch: false
-    embedding_visualization: 500
+    embedding_visualization: 0        # 0 = off; N>0 = plot aligned embeddings every N epochs (also fires at epoch 0)
     visualize_original_embeddings: false
     log_structural_preservation: false
     structural_preservation_k:

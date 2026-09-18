@@ -35,6 +35,8 @@ CKPTS = {
     "generic200k": "results/alignment-microsoft_BiomedNLP_BiomedBERT_base_uncased_abstract_fulltext-hf_hub:MahmoodLab_UNI2_h-lunar-darkness-224/(23, 12)_nan_seed42/checkpoints/checkpoint-epoch246.pth",
     "cap1_100k":   "results/alignment-microsoft_BiomedNLP_BiomedBERT_base_uncased_abstract_fulltext-hf_hub:MahmoodLab_UNI2_h-eager-planet-229/(23, 12)_nan_seed42/checkpoints/checkpoint-epoch223.pth",
     "genbal_96k":  "results/alignment-microsoft_BiomedNLP_BiomedBERT_base_uncased_abstract_fulltext-hf_hub:MahmoodLab_UNI2_h-desert-blaze-230/(23, 12)_nan_seed42/checkpoints/checkpoint-epoch246.pth",
+    # PathCap-trained (cross-domain transfer test: no HPA data seen in training)
+    "pathcap_220k":"results/alignment-microsoft_BiomedNLP_BiomedBERT_base_uncased_abstract_fulltext-hf_hub:MahmoodLab_UNI2_h-comic-haze-232/(23, 12)_nan_seed42/checkpoints/checkpoint-epoch78.pth",
 }
 INTENSITY = ["negative", "weak", "moderate", "strong"]
 LOCATION  = ["nuclear", "cytoplasmic/membranous", "cytoplasmic/membranous,nuclear"]
@@ -47,16 +49,26 @@ class ImgDS(Dataset):
 
 @torch.no_grad()
 def extract(vision, tfm, ais, paths, img_layer, bs=64):
-    """Return CLS (N,1536) and {ckpt: PAL-pooled (N,512)} for a list of image paths."""
-    N=len(paths); cls=torch.zeros(N,1536); pooled={k: None for k in ais}
+    """Return CLS (N,1536), mean-pooled patch tokens (N,1536) and
+    {ckpt: PAL-pooled (N,512)} for a list of image paths.
+
+    The mean-patch feature is a pooling control: PAL sees all 265 tokens through
+    CAP while the CLS baseline sees one token, so a PAL-vs-CLS gap mixes the
+    alignment effect with the "looked at every token" effect. Mean-pooling the
+    patch tokens (UNI2-h layout: 1 CLS + 8 register + 256 patch -> slice [9:])
+    keeps the raw encoder but gives it the same whole-image pooling.
+    """
+    N=len(paths); cls=torch.zeros(N,1536); meanp=torch.zeros(N,1536)
+    pooled={k: None for k in ais}
     for imgs, idx in DataLoader(ImgDS(paths, tfm), batch_size=bs, num_workers=8):
         toks = vision(imgs.to(DEV))[f"blocks.{img_layer}.add_1"].float()   # (B,265,1536)
         cls[idx] = toks[:,0,:].cpu()                                       # CLS token
+        meanp[idx] = toks[:,9:,:].mean(dim=1).cpu()                        # 256 patch tokens
         for k, ai in ais.items():
             e = ai(toks); e = e.reshape(e.shape[0], -1).cpu()
             if pooled[k] is None: pooled[k]=torch.zeros(N, e.shape[1])
             pooled[k][idx] = e
-    return cls.numpy(), {k: v.numpy() for k,v in pooled.items()}
+    return cls.numpy(), meanp.numpy(), {k: v.numpy() for k,v in pooled.items()}
 
 def probe(Xtr, ytr, Xte, yte):
     sc=StandardScaler().fit(Xtr)
@@ -82,10 +94,11 @@ def main():
 
     trp=[os.path.join(IMG_DIR, os.path.basename(p)) for p in pool["image_path"]]
     vap=[os.path.join(IMG_DIR, os.path.basename(p)) for p in va["image_path"]]
-    print("extracting train features ...", flush=True); tr_cls, tr_pool = extract(vision, tfm, ais, trp, args.img_layer)
-    print("extracting val features ...", flush=True);   va_cls, va_pool = extract(vision, tfm, ais, vap, args.img_layer)
+    print("extracting train features ...", flush=True); tr_cls, tr_mp, tr_pool = extract(vision, tfm, ais, trp, args.img_layer)
+    print("extracting val features ...", flush=True);   va_cls, va_mp, va_pool = extract(vision, tfm, ais, vap, args.img_layer)
 
-    feats={"UNI2-raw": (tr_cls, va_cls)}
+    feats={"UNI2-raw(CLS)": (tr_cls, va_cls),
+           "UNI2-meanpatch": (tr_mp, va_mp)}
     for k in ais: feats[f"PAL-{k}"]=(tr_pool[k], va_pool[k])
 
     # tissue: 65-way over all rows (classes present in both train pool and val)

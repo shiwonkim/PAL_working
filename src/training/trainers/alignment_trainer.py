@@ -1757,7 +1757,7 @@ class AlignmentTrainer(Trainer):
         if (
             self.config["training"].get("log_structural_preservation", False)
             or self.config["training"].get("log_repr_similarity", False)
-            or epoch % self.config["training"]["embedding_visualization"] == 0
+            or (self.config["training"]["embedding_visualization"] and epoch % self.config["training"]["embedding_visualization"] == 0)
         ):
             l_aligned_image_feats = torch.cat(l_aligned_image_feats).cpu()
             l_aligned_text_feats = torch.cat(l_aligned_text_feats).cpu()
@@ -1811,7 +1811,7 @@ class AlignmentTrainer(Trainer):
             log_dict[
                 f"{wandb_prefix}{self.config['layer_selection']['metric']}_text_train"
             ] = alignment_score_txt
-        if epoch % self.config["training"]["embedding_visualization"] == 0:
+        if self.config["training"]["embedding_visualization"] and epoch % self.config["training"]["embedding_visualization"] == 0:
             l_aligned_feats = torch.cat([l_aligned_image_feats, l_aligned_text_feats])
             l_aligned_targets = np.ones((len(l_aligned_feats),))
             l_aligned_targets[: len(l_aligned_image_feats)] = 0
@@ -1920,7 +1920,7 @@ class AlignmentTrainer(Trainer):
         if (
             self.config["training"].get("log_repr_similarity", False)
             or self.config["training"].get("log_structural_preservation", False)
-            or epoch % self.config["training"]["embedding_visualization"] == 0
+            or (self.config["training"]["embedding_visualization"] and epoch % self.config["training"]["embedding_visualization"] == 0)
         ):
             l_aligned_image_feats = torch.cat(l_aligned_image_feats).cpu()
             l_aligned_text_feats = torch.cat(l_aligned_text_feats).cpu()
@@ -1969,7 +1969,7 @@ class AlignmentTrainer(Trainer):
             log_dict[
                 f"{wandb_prefix}{self.config['layer_selection']['metric']}_text_val"
             ] = alignment_score_txt
-        if epoch % self.config["training"]["embedding_visualization"] == 0:
+        if self.config["training"]["embedding_visualization"] and epoch % self.config["training"]["embedding_visualization"] == 0:
             l_aligned_feats = torch.cat([l_aligned_image_feats, l_aligned_text_feats])
             l_aligned_targets = np.ones((len(l_aligned_feats),))
             l_aligned_targets[: len(l_aligned_image_feats)] = 0

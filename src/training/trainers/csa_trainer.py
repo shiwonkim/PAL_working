@@ -86,21 +86,22 @@ class CSATrainer(AlignmentTrainer):
         # pre-compute the embeddings from both modalities
         # first embed the validation set since we're returning
         # the models for the training set
-        image_val_suffix = f"val-{self.config['features']['pool_img']}"
-        if self.config["features"].get("layer_img") is not None:
-            image_val_suffix += f"_layer-{self.config['features']['layer_img']}"
-        text_val_suffix = f"val-{self.config['features']['pool_txt']}"
-        if self.config["features"].get("layer_img") is not None:
-            text_val_suffix += f"_layer-{self.config['features']['layer_txt']}"
+        # Pooled feature caches (cls/avg) store ALL layers and carry no _layer
+        # suffix; images additionally carry -r{img_size}. Match FeatureSpec so the
+        # existing shared caches are reused instead of re-extracted (the old
+        # per-layer suffix was a pre-refactor leftover that missed the cache).
+        _img_size = int(self.config["features"]["img_size"])
+        image_train_suffix = f"train-{self.config['features']['pool_img']}-r{_img_size}"
+        text_train_suffix = f"train-{self.config['features']['pool_txt']}"
         image_features_train = self.get_image_features(
             loader=self.train_dataset,
             lvm_model_name=self.lvm_model_name,
-            suffix=image_val_suffix.replace("val-", "train-"),
+            suffix=image_train_suffix,
         )
         text_features_train = self.get_text_features(
             loader=self.train_dataset,
             llm_model_name=self.llm_model_name,
-            suffix=text_val_suffix.replace("val-", "train-"),
+            suffix=text_train_suffix,
         )
 
         # check that we have the same samples
@@ -251,7 +252,7 @@ class CSATrainer(AlignmentTrainer):
                 m_name=self.lvm_model_name,
                 d_name=eval_dataset_name,
                 save_path=self.save_path,
-                suffix=f"eval-{self.config['features']['pool_img']}",
+                suffix=f"eval-{self.config['features']['pool_img']}-r{int(self.config['features']['img_size'])}",
             )
             save_path_language = AlignmentTrainer.get_feature_save_path(
                 m_name=self.llm_model_name,
@@ -481,7 +482,7 @@ class CSATrainer(AlignmentTrainer):
             image_features_val = self.get_image_features(
                 loader=eval_loader,
                 lvm_model_name=self.lvm_model_name,
-                suffix=f"eval-{self.config['features']['pool_img']}",
+                suffix=f"eval-{self.config['features']['pool_img']}-r{int(self.config['features']['img_size'])}",
             )
             text_features_val = self.get_text_features(
                 loader=eval_loader,

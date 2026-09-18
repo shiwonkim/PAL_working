@@ -42,8 +42,21 @@ class MLPAlignmentLayer(BaseAlignmentLayer):
 
 
 def orthogonal_linear(layer: nn.Linear, gain: float = 1.0):
-    """Orthogonal (or semi-orthogonal) weight init, zero bias."""
-    nn.init.orthogonal_(layer.weight, gain=gain)
+    """Orthogonal (or semi-orthogonal) weight init, zero bias.
+
+    ``torch.linalg.qr`` (used by ``orthogonal_``) has no CPU kernel for
+    low-precision dtypes (e.g. bfloat16), which can happen when the layer is
+    reconstructed inside a bf16 context at checkpoint-load time. Compute the
+    orthogonal matrix in float32 and cast back so init never crashes; the
+    float32 path is bit-identical to before.
+    """
+    if layer.weight.dtype in (torch.float32, torch.float64):
+        nn.init.orthogonal_(layer.weight, gain=gain)
+    else:
+        w = layer.weight.detach().float()
+        nn.init.orthogonal_(w, gain=gain)
+        with torch.no_grad():
+            layer.weight.copy_(w.to(layer.weight.dtype))
     if layer.bias is not None:
         nn.init.zeros_(layer.bias)
 

@@ -155,6 +155,15 @@ class PALAlignmentLayer(BaseAlignmentLayer):
                 profile = sim.mean(dim=1)             # (B, K)
             return self._postprocess(profile)
 
+        if getattr(self, "pool_method", "cap") == "max":
+            # Hard max over tokens per anchor (vs CAP's similarity-softmax).
+            if mask is not None:
+                sim = sim.masked_fill(
+                    ~mask.bool().unsqueeze(-1), float("-inf")
+                )
+            profile = sim.max(dim=1).values          # (B, K)
+            return self._postprocess(profile)
+
         # CAP path (default)
         logits = sim / self.pool_temperature         # (B, T, K)
 

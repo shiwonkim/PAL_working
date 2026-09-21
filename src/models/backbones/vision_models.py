@@ -14,6 +14,16 @@ from torchvision.models.feature_extraction import create_feature_extractor
 
 from src.datasets.data_utils import _ensure_rgb_image
 
+# Per-model extra kwargs for timm.create_model. Some DINOv2-family hf-hub
+# checkpoints (e.g. pathology UNI) use LayerScale (blocks.*.ls{1,2}.gamma); timm
+# only builds those params when ``init_values`` is passed, so without it the
+# pretrained state_dict fails to load. NOTE: do NOT set ``dynamic_img_size`` here
+# — it inserts control flow into pos-embed resampling that torch.fx (used by
+# create_feature_extractor below) cannot trace.
+_LVM_EXTRA_KWARGS = {
+    "hf-hub:MahmoodLab/UNI": {"init_values": 1e-5},
+}
+
 
 def load_lvm(lvm_model_name, img_size=None, device="cpu"):
     """Build a vision encoder + transform that yields per-layer token features.
@@ -22,7 +32,7 @@ def load_lvm(lvm_model_name, img_size=None, device="cpu"):
     feature extractor returning every transformer block's output
     (``blocks.{i}.add_1``); only ViT-family models are supported.
     """
-    model_kwargs = {}
+    model_kwargs = dict(_LVM_EXTRA_KWARGS.get(lvm_model_name, {}))
     if img_size is not None:
         model_kwargs["img_size"] = int(img_size)
     vision_model = timm.create_model(
@@ -37,7 +47,11 @@ def load_lvm(lvm_model_name, img_size=None, device="cpu"):
     transform = create_transform(**data_config)
     transform.transforms = [_ensure_rgb_image] + transform.transforms
 
-    if "vit" in lvm_model_name:
+    # ViT-family (timm DINOv2, hf-hub UNI, …): every transformer block exposes a
+    # residual-add node ``blocks.{i}.add_1``. Broadened from a name substring
+    # check to ``hasattr(blocks)`` so hf-hub ViTs whose name lacks "vit"
+    # (e.g. "hf-hub:MahmoodLab/UNI") are covered too.
+    if hasattr(vision_model, "blocks"):
         return_nodes = [
             f"blocks.{i}.add_1" for i in range(len(vision_model.blocks))
         ]

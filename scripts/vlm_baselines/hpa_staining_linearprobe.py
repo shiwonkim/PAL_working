@@ -55,15 +55,17 @@ def extract(vision, tfm, ais, paths, img_layer, bs=64):
     The mean-patch feature is a pooling control: PAL sees all 265 tokens through
     CAP while the CLS baseline sees one token, so a PAL-vs-CLS gap mixes the
     alignment effect with the "looked at every token" effect. Mean-pooling the
-    patch tokens (UNI2-h layout: 1 CLS + 8 register + 256 patch -> slice [9:])
+    patch tokens (skipping the encoder's num_prefix_tokens leading non-patch tokens —
+    UNI2-h: 1 CLS + 8 register, so [9:]; DINOv2 / UNI v1: [1:])
     keeps the raw encoder but gives it the same whole-image pooling.
     """
+    n_prefix = int(getattr(vision, "num_prefix_tokens", 1))
     N=len(paths); cls=torch.zeros(N,1536); meanp=torch.zeros(N,1536)
     pooled={k: None for k in ais}
     for imgs, idx in DataLoader(ImgDS(paths, tfm), batch_size=bs, num_workers=8):
         toks = vision(imgs.to(DEV))[f"blocks.{img_layer}.add_1"].float()   # (B,265,1536)
         cls[idx] = toks[:,0,:].cpu()                                       # CLS token
-        meanp[idx] = toks[:,9:,:].mean(dim=1).cpu()                        # 256 patch tokens
+        meanp[idx] = toks[:,n_prefix:,:].mean(dim=1).cpu()                 # patch tokens only
         for k, ai in ais.items():
             e = ai(toks); e = e.reshape(e.shape[0], -1).cpu()
             if pooled[k] is None: pooled[k]=torch.zeros(N, e.shape[1])

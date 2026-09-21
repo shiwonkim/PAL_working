@@ -71,7 +71,13 @@ def load_lvm(lvm_model_name, img_size=None, device="cpu"):
         ]
     else:
         raise NotImplementedError(f"unknown model {lvm_model_name}")
+    # Number of leading non-patch tokens (CLS + any register tokens): 1 for
+    # DINOv2 / UNI, 9 for UNI2-h. Read it before fx-wrapping — the GraphModule
+    # loses the attribute — and expose it on the wrapper so per-patch consumers
+    # can slice [num_prefix_tokens:] instead of hard-coding a layout.
+    n_prefix = int(getattr(vision_model, "num_prefix_tokens", 1))
     vision_model = create_feature_extractor(vision_model, return_nodes=return_nodes)
+    vision_model.num_prefix_tokens = n_prefix
     vision_model = vision_model.to(device)
     vision_model = vision_model.eval()
     return vision_model, transform

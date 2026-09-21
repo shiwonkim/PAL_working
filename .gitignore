@@ -334,3 +334,6 @@ configs/pal/vitl_roberta/*_evallocal.yaml
 
 # Claude Code memory backup (host-persistent copy of /root/.claude/.../memory)
 .claude-memory/
+
+# scratch visualizations (throwaway experiment plots)
+scratch_*.png

@@ -8,8 +8,10 @@ needed from the store was ``img_size`` and ``device``, now explicit args.
 """
 
 import timm
+import torch.nn as nn
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
+from timm.layers import SwiGLUPacked
 from torchvision.models.feature_extraction import create_feature_extractor
 
 from src.datasets.data_utils import _ensure_rgb_image
@@ -22,6 +24,18 @@ from src.datasets.data_utils import _ensure_rgb_image
 # create_feature_extractor below) cannot trace.
 _LVM_EXTRA_KWARGS = {
     "hf-hub:MahmoodLab/UNI": {"init_values": 1e-5},
+    # UNI2-h: ViT-H/14, 1536-d, SwiGLU MLP + SiLU, 8 register tokens (token layout =
+    # 1 CLS + 8 reg + 256 patch = 265). dynamic_img_size MUST stay False so torch.fx can
+    # trace the fixed 224 pos-embed (verified: create_feature_extractor yields
+    # blocks.{i}.add_1 with 265 tokens). num_prefix_tokens=9; per-patch consumers
+    # (seg/localization) must slice [9:] not [1:] — token-level CAP pools all tokens, so
+    # training/retrieval need no change.
+    "hf-hub:MahmoodLab/UNI2-h": {
+        "patch_size": 14, "depth": 24, "num_heads": 24, "init_values": 1e-5,
+        "embed_dim": 1536, "mlp_ratio": 2.66667 * 2, "num_classes": 0,
+        "no_embed_class": True, "mlp_layer": SwiGLUPacked, "act_layer": nn.SiLU,
+        "reg_tokens": 8, "dynamic_img_size": False,
+    },
 }
 
 

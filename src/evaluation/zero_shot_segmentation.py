@@ -84,6 +84,7 @@ from src.datasets.data_utils import _ensure_rgb_image
 from src.evaluation.zero_shot_metadata import DATASETS_TO_TEMPLATES
 from src.evaluation.zero_shot_classifier import build_zero_shot_classifier
 from src.models.backbones.text_models import load_llm, load_tokenizer
+from src.models.backbones.vision_models import _LVM_EXTRA_KWARGS
 from src.utils.checkpoint import load_alignment_layer
 
 # ------------------------------------------------------------------
@@ -543,7 +544,10 @@ def build_vision_encoder(cfg: dict, device: torch.device):
     lvm_model_name = cfg["alignment"]["lvm_model_name"]
     img_size = int(cfg["features"]["img_size"])
 
-    model_kwargs = {"img_size": img_size}
+    # Same per-model kwargs as load_lvm (UNI needs init_values; UNI2-h needs its
+    # SwiGLU/register-token layout) so hf-hub pathology encoders load here too.
+    model_kwargs = dict(_LVM_EXTRA_KWARGS.get(lvm_model_name, {}))
+    model_kwargs["img_size"] = img_size
     vision_model = timm.create_model(lvm_model_name, pretrained=True, **model_kwargs)
     data_cfg = resolve_data_config(vision_model.pretrained_cfg, model=vision_model)
     mean = data_cfg["mean"]
@@ -555,7 +559,9 @@ def build_vision_encoder(cfg: dict, device: torch.device):
     # per-patch methods can strip the right prefix instead of assuming [1:].
     n_prefix = int(getattr(vision_model, "num_prefix_tokens", 1))
 
-    if "vit" in lvm_model_name:
+    # hasattr(blocks) rather than "vit" in name, so hf-hub ViTs whose name lacks
+    # "vit" (e.g. hf-hub:MahmoodLab/UNI) are covered — mirrors load_lvm.
+    if hasattr(vision_model, "blocks"):
         return_nodes = [
             f"blocks.{i}.add_1" for i in range(len(vision_model.blocks))
         ]

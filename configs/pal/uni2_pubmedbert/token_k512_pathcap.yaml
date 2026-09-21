@@ -1,0 +1,57 @@
+defaults: !include ../../default.yaml
+
+# Pathology PAL -- PathCap clean-source training (curated PubMed figure sub-captions,
+# Sun et al. PathAsst). NO VLM scorer is used to select data: PathCap is curated at
+# the source (per-panel caption assignment), so this is the circularity-free
+# counterpart to the CONCH-scored token_k512_top100k.yaml. Same UNI+PubMedBERT token
+# K=512 recipe; only the dataset/selection differ. Captions >128 BERT tokens dropped
+# (0.61%) so no truncation is needed (pool natively <=128 tokens).
+overrides:
+    alignment:
+        llm_model_name: "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext"
+        lvm_model_name: "hf-hub:MahmoodLab/UNI2-h"
+
+    features:
+        dataset: "pathcap"
+        selection_path:
+            train: "/home/shiwon/STRUCTURE/data/pathcap/selections/pathcap_train_le128_seed42.csv"
+            val: "/home/shiwon/STRUCTURE/data/pathcap/selections/pathcap_val_le128_seed42.csv"
+        batch_size: 64
+        num_workers: 0
+        layer_img: 23    # UNI2-h ViT-H last block (0..23)
+        layer_txt: 12    # PubMedBERT-base last hidden (0..12)
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    training:
+        token_level: true
+
+        alignment_layer_name: "PALAlignmentLayer"
+        alignment_layer_kwargs:
+            num_anchors: 512
+            pool_temperature: 0.05
+            projector_dim: 0
+
+        batch_size: 2048
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+        visualize_original_embeddings: false
+        log_structural_preservation: false
+
+    evaluation:
+        token_level_zero_shot: true
+        zero_shot_datasets:
+            - "crc100k"
+            - "sicap"
+        retrieval_datasets: []

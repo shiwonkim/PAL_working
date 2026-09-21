@@ -1,0 +1,71 @@
+defaults: !include ../../default.yaml
+
+# HPA10M IHC PAL -- UNI2-h + PubMedBERT (token K=512), CAPTION_1 variant. Same images/encoder/
+# recipe as token_k512_hpa10m.yaml; only the caption column changes (generic_caption -> caption_1).
+# Motivation: generic captions are only 51% unique (negatives 22% -- identical "no staining"),
+# capping retrieval R@1 at ~0.51; caption_1 is 99% unique even on negatives, so it removes the
+# contrastive degeneracy and lifts the retrieval ceiling. dataset name "hpa10m_cap1" gives a
+# separate feature cache; the 152GB UNI2-h image .npy is SHARED via symlink (same images/order),
+# so ONLY the (cheap) PubMedBERT text features are re-extracted. caption_1 <=76 BERT tokens (no
+# truncation). Verify loadability after (checkpoint format unchanged).
+
+overrides:
+    alignment:
+        llm_model_name: "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext"
+        lvm_model_name: "hf-hub:MahmoodLab/UNI2-h"
+
+    features:
+        dataset: "hpa10m_cap1"
+        selection_path:
+            train: "/home/shiwon/STRUCTURE/data/hpa10m/selections/hpa10m_train_whole256_cap1_seed42.csv"
+            val: "/home/shiwon/STRUCTURE/data/hpa10m/selections/hpa10m_val_whole256_cap1_seed42.csv"
+        batch_size: 64
+        num_workers: 0
+        layer_img: 23    # UNI2-h ViT-H last block (0..23)
+        layer_txt: 12    # PubMedBERT-base last hidden (0..12)
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    training:
+        token_level: true
+
+        # 100K subset: 200K (151GB token cache) evicts from page cache under daytime
+        # RAM contention, so mmap fancy-index gather never warms up (epoch stuck ~370s
+        # vs generic's 117s once cached at night). 100K token cache (~76GB) stays fully
+        # resident even alongside other users' jobs -> gather warms, speed recovers.
+        # Nested-subset (seed 42) so it's a reproducible sub-sample of the 200K.
+        n_random_subsample_train: 100000
+        n_random_subsample_val: 2000
+
+        alignment_layer_name: "PALAlignmentLayer"
+        alignment_layer_kwargs:
+            num_anchors: 512
+            pool_temperature: 0.05
+            projector_dim: 0
+
+        # UNI2-h tokens are 265x1536 (~2x UNI v1's 197x1024). CAP forward activation at
+        # batch 4096 ≈ 12.4GB (vs UNI v1's 7.7GB at 4096) OOM'd on a busy GPU. batch 2048
+        # ≈ 6.2GB — below UNI v1's stable 4096 footprint, so it fits comfortably, and the
+        # low caption diversity (51% unique) doesn't need a large contrastive batch.
+        batch_size: 2048
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+        visualize_original_embeddings: false
+        log_structural_preservation: false
+
+    evaluation:
+        token_level_zero_shot: true
+        zero_shot_datasets: []
+        retrieval_datasets:
+            - "hpa10m_cap1"

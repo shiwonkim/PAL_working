@@ -130,7 +130,7 @@ def main():
         **_ds_kwargs,
     )
     if cfg["features"]["dataset"] not in (
-        "coco", "coco2017", "flickr30", "pathcap"
+        "coco", "coco2017", "flickr30", "quilt1m", "pathcap", "archbook", "hpa10m", "hpa10m_cap1", "hpa10m_dedup", "hpa10m_genbal"
     ):
         train_ds = ImageTextDataset(
             dataset=train_ds,

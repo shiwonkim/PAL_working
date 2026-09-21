@@ -1,0 +1,6 @@
+{"0": {"classnames": {
+  "benign": ["benign", "benign prostate glands", "non-cancerous prostate tissue", "benign glands", "normal prostate tissue"],
+  "G3": ["Gleason grade 3", "prostate cancer Gleason pattern 3", "prostatic adenocarcinoma Gleason grade 3", "well-formed cancerous glands", "Gleason pattern 3"],
+  "G4": ["Gleason grade 4", "prostate cancer Gleason pattern 4", "prostatic adenocarcinoma Gleason grade 4", "fused and cribriform cancerous glands", "Gleason pattern 4"],
+  "G5": ["Gleason grade 5", "prostate cancer Gleason pattern 5", "prostatic adenocarcinoma Gleason grade 5", "poorly differentiated prostate carcinoma", "Gleason pattern 5"]
+}}}

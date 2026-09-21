@@ -273,9 +273,10 @@ class SegmentationMethod:
     decoding: str = "direct"
 
     def get_patch_features(
-        self, layer_feats: torch.Tensor, device: torch.device
+        self, layer_feats: torch.Tensor, device: torch.device, n_prefix: int = 1
     ) -> torch.Tensor:
-        """Return a (P, D_method) per-patch descriptor (CLS stripped)."""
+        """Return a (P, D_method) per-patch descriptor with the ``n_prefix``
+        leading non-patch tokens (CLS + registers) stripped."""
         raise NotImplementedError
 
     def get_text_features(
@@ -302,9 +303,9 @@ class DirectCosineMethod(SegmentationMethod):
     def __init__(self, pool_txt: str):
         self.pool_txt = pool_txt
 
-    def get_patch_features(self, layer_feats, device):
+    def get_patch_features(self, layer_feats, device, n_prefix: int = 1):
         # layer_feats: (T, D) with CLS at index 0. Return P patches only.
-        return layer_feats[1:, :].to(device)
+        return layer_feats[n_prefix:, :].to(device)
 
     def get_text_features(
         self, classnames, templates, tokenizer, language_model,
@@ -348,11 +349,11 @@ class FAMethod(SegmentationMethod):
         self.alignment_text = alignment_text
         self.decoding = decoding
 
-    def get_patch_features(self, layer_feats, device):
+    def get_patch_features(self, layer_feats, device, n_prefix: int = 1):
         with torch.no_grad():
             z = layer_feats.unsqueeze(0).to(device)          # (1, T, D)
             projected = self.alignment_image.local_vision_proj(z)  # (1, T, E)
-            return projected.squeeze(0)[1:, :]                # (P, E)
+            return projected.squeeze(0)[n_prefix:, :]                # (P, E)
 
     def get_text_features(
         self, classnames, templates, tokenizer, language_model,
@@ -402,9 +403,9 @@ class PALAnchorCodebookMethod(SegmentationMethod):
         self.token_level = token_level
         self.pool_txt = pool_txt
 
-    def get_patch_features(self, layer_feats, device):
+    def get_patch_features(self, layer_feats, device, n_prefix: int = 1):
         with torch.no_grad():
-            z = layer_feats[1:, :].to(device)        # (P, D)
+            z = layer_feats[n_prefix:, :].to(device)        # (P, D)
             # Apply the learned projector (if any) BEFORE the anchor similarity,
             # matching PALAlignmentLayer's token forward. Projection-free PAL has
             # projector=None so this is a no-op (result byte-identical); with a
@@ -479,9 +480,9 @@ class LinearPerPatchMethod(SegmentationMethod):
         self.token_level = token_level
         self.pool_txt = pool_txt
 
-    def get_patch_features(self, layer_feats, device):
+    def get_patch_features(self, layer_feats, device, n_prefix: int = 1):
         with torch.no_grad():
-            patches = layer_feats[1:, :].to(device)  # (P, D), strip CLS
+            patches = layer_feats[n_prefix:, :].to(device)  # (P, D), strip CLS
             cls_name = type(self.alignment_image).__name__
             if cls_name == "LinearAlignmentLayer":
                 return self.alignment_image.linear_mapping(patches)  # (P, D_out)
@@ -548,6 +549,12 @@ def build_vision_encoder(cfg: dict, device: torch.device):
     mean = data_cfg["mean"]
     std = data_cfg["std"]
 
+    # Number of non-patch tokens at the front of the sequence (CLS + any register
+    # tokens): 1 for DINOv2 / UNI, 9 for UNI2-h. Read it before fx-wrapping (the
+    # GraphModule loses the attribute) and expose it on the wrapper so the
+    # per-patch methods can strip the right prefix instead of assuming [1:].
+    n_prefix = int(getattr(vision_model, "num_prefix_tokens", 1))
+
     if "vit" in lvm_model_name:
         return_nodes = [
             f"blocks.{i}.add_1" for i in range(len(vision_model.blocks))
@@ -556,6 +563,7 @@ def build_vision_encoder(cfg: dict, device: torch.device):
         raise NotImplementedError(f"unknown vision model {lvm_model_name}")
     vision_model = create_feature_extractor(vision_model, return_nodes=return_nodes)
     vision_model = vision_model.float().to(device).eval()
+    vision_model.num_prefix_tokens = n_prefix
 
     image_transform = transforms.Compose([
         transforms.Lambda(_ensure_rgb_image),
@@ -837,7 +845,8 @@ def run_eval(
             layer_key = list(lvm_out.keys())[layer_img]
             feats = lvm_out[layer_key].squeeze(0)  # (T, D)
 
-        patch_feats = method.get_patch_features(feats, device).float()  # (P, D_m)
+        n_prefix = int(getattr(vision_model, "num_prefix_tokens", 1))
+        patch_feats = method.get_patch_features(feats, device, n_prefix).float()  # (P, D_m)
 
         decoding = getattr(method, "decoding", "direct")
         if decoding == "factorized":

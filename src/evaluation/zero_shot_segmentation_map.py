@@ -63,10 +63,10 @@ class MAPPerPatchMethod(SegmentationMethod):
         self.token_level = token_level
         self.pool_txt = pool_txt
 
-    def get_patch_features(self, layer_feats, device):
+    def get_patch_features(self, layer_feats, device, n_prefix: int = 1):
         with torch.no_grad():
             ai = self.alignment_image
-            patches = layer_feats[1:, :].to(device)      # (P, D) strip CLS
+            patches = layer_feats[n_prefix:, :].to(device)  # (P, D) strip CLS + registers
             kv = ai.in_proj(patches)                     # (P, d)
             v = ai.v_proj(kv)                            # (P, d) per-patch value
             pooled = ai.out_proj(v)                      # (P, d) (attention skipped)

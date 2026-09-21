@@ -2386,6 +2386,21 @@ DATASETS_TO_CLASSES = {
         "lymph node",
         "lymph node containing metastatic tumor tissue",
     ],
+    # NCT-CRC-HE (colorectal H&E, 9 tissue classes). Order MUST match
+    # torchvision ImageFolder's alphabetical class ordering of the folder codes
+    # ADI, BACK, DEB, LYM, MUC, MUS, NORM, STR, TUM (Kather et al. 2019). Class
+    # names follow the CONCH / MI-Zero histopathology zero-shot convention.
+    "crc100k": [
+        "adipose",
+        "background",
+        "debris",
+        "lymphocytes",
+        "mucus",
+        "smooth muscle",
+        "normal colon mucosa",
+        "cancer-associated stroma",
+        "colorectal adenocarcinoma epithelium",
+    ],
     "ucf101": [
         "Apply Eye Makeup",
         "Apply Lipstick",
@@ -4214,6 +4229,35 @@ DATASETS_TO_CLASSES = {
 }
 
 
+# CONCH's official histopathology template ensemble (22 templates, from
+# mahmoodlab/CONCH prompts/crc100k_prompts_all_per_class.json, "CLASSNAME" -> "{}").
+# Shared by the pathology zero-shot datasets so PAL is evaluated with the SAME
+# prompts as the frozen VLM baselines (scripts/vlm_baselines/).
+_HISTO_TEMPLATES_22 = [
+    "{}.",
+    "a photomicrograph showing {}.",
+    "a photomicrograph of {}.",
+    "an image of {}.",
+    "an image showing {}.",
+    "an example of {}.",
+    "{} is shown.",
+    "this is {}.",
+    "there is {}.",
+    "a histopathological image showing {}.",
+    "a histopathological image of {}.",
+    "a histopathological photograph of {}.",
+    "a histopathological photograph showing {}.",
+    "shows {}.",
+    "presence of {}.",
+    "{} is present.",
+    "an H&E stained image of {}.",
+    "an H&E stained image showing {}.",
+    "an H&E image showing {}.",
+    "an H&E image of {}.",
+    "{}, H&E stain.",
+    "{}, H&E.",
+]
+
 DATASETS_TO_TEMPLATES: Dict[str, Sequence[str]] = {
     "food101": [
         "a photo of {}, a type of food.",
@@ -4396,6 +4440,8 @@ DATASETS_TO_TEMPLATES: Dict[str, Sequence[str]] = {
     "pcam": [
         "this is a photo of {}",
     ],
+    # Pathology zero-shot: CONCH's official 22-template ensemble (see above).
+    "crc100k": _HISTO_TEMPLATES_22,
     "ucf101": [
         "a photo of a person {}.",
         "a video of a person {}.",
@@ -4566,5 +4612,26 @@ DATASETS_TO_TEMPLATES: Dict[str, Sequence[str]] = {
         "a photo of a cool {}.",
         "a photo of a small {}.",
         "a tattoo of the {}.",
+    ],
+}
+
+
+# Optional per-class SYNONYMS for pathology zero-shot (opt-in via
+# evaluation.use_synonyms). When enabled, the trainer builds one text prototype
+# per (synonym x template), then averages the synonyms within each class -- the
+# same ensemble the frozen VLM baselines use (scripts/vlm_baselines/vlm_official.py).
+# List order MUST match DATASETS_TO_CLASSES (i.e. torchvision ImageFolder order).
+# CRC100K synonyms are CONCH's official set (prompts/crc100k_prompts_all_per_class.json).
+DATASETS_TO_SYNONYMS: Dict[str, Sequence[Sequence[str]]] = {
+    "crc100k": [
+        ["adipose", "adipose tissue", "adipocytes", "fat", "fat cells"],
+        ["background", "penmarking", "empty space", "background artifacts"],
+        ["debris", "colorectal adenocarcinoma debris and necrosis", "necrosis", "necrotic debris"],
+        ["lymphocytes", "lymphoid aggregate", "immune cells", "lymphoid infiltrate", "inflammatory cells"],
+        ["mucus", "mucin", "mucus pool", "mucin pool"],
+        ["smooth muscle", "smooth muscle tissue", "muscle", "muscularis propria", "muscularis mucosa"],
+        ["normal colon mucosa", "uninvolved colon mucosa", "normal colonic mucosa", "benign epithelium"],
+        ["cancer-associated stroma", "tumor-associated stroma", "stromal cells", "stromal tissue", "stroma"],
+        ["colorectal adenocarcinoma epithelium", "colorectal adenocarcinoma", "tumor", "adenocarcinoma", "malignant epithelium"],
     ],
 }

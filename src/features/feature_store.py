@@ -128,6 +128,7 @@ class FeatureStore:
 
         language_model, tokenizer = self.get_llm(llm_model_name=llm_model_name)
         loader.dataset.tokenizer = tokenizer
+        loader.dataset.max_length = self.config["features"].get("text_max_length")
         if hasattr(loader.dataset, "loading_type"):
             # for optimizing the loading and looping
             loader.dataset.loading_type = LoadingType.TXT_ONLY
@@ -237,6 +238,7 @@ class FeatureStore:
         # Build masks by re-running the tokenizer over the dataloader.
         _, tokenizer = self.get_llm(llm_model_name=llm_model_name)
         loader.dataset.tokenizer = tokenizer
+        loader.dataset.max_length = self.config["features"].get("text_max_length")
         if hasattr(loader.dataset, "loading_type"):
             loader.dataset.loading_type = LoadingType.TXT_ONLY
         loader.dataset.apply_tokenizer()

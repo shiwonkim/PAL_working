@@ -11,6 +11,7 @@ from torch.utils.data import ConcatDataset, DataLoader, Dataset, Subset
 
 from src.datasets.coco_dataset import CocoCaptionDataset
 from src.datasets.flickr30k_dataset import Flickr30kDataset
+from src.datasets.quilt_dataset import QuiltCaptionDataset
 
 IMAGENET_DEFAULT_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_DEFAULT_STD = (0.229, 0.224, 0.225)
@@ -490,6 +491,21 @@ def get_datasets(dataset, transform, root_dir: Union[str, Path] = "./data", **kw
         except (FileNotFoundError, RuntimeError):
             train_dataset = val_dataset
 
+    elif dataset == "crc100k":
+        # NCT-CRC-HE colorectal H&E tissue-classification benchmark (Kather 2019).
+        #   train = NCT-CRC-HE-100K (100k patches), eval = CRC-VAL-HE-7K (7180).
+        # Folder codes ADI/BACK/DEB/LYM/MUC/MUS/NORM/STR/TUM sort alphabetically,
+        # so ImageFolder label order matches DATASETS_TO_CLASSES["crc100k"].
+        crc_path = os.path.join(data_path, "crc100k")
+        val_dataset = dsets.ImageFolder(
+            root=os.path.join(crc_path, "CRC-VAL-HE-7K"), transform=transform
+        )
+        train_root = os.path.join(crc_path, "NCT-CRC-HE-100K")
+        if os.path.isdir(train_root):
+            train_dataset = dsets.ImageFolder(root=train_root, transform=transform)
+        else:
+            train_dataset = val_dataset
+
     elif dataset == "ucf101":
         """
         It requires pip install av pyunpack patool
@@ -671,6 +687,33 @@ def get_datasets(dataset, transform, root_dir: Union[str, Path] = "./data", **kw
                 )
                 val_dataset.df = val_dataset.df[keep].reset_index(drop=True)
                 val_dataset.name = "coco_karpathy"
+
+    elif dataset == "pathcap":
+        # PathCap pathology image-caption pairs (curated PubMed figure sub-captions,
+        # Sun et al. PathAsst). Clean-source training pool -- captions are already
+        # per-panel curated, so NO VLM scorer is used (contrast with the CONCH-scored
+        # Quilt selections). Reuses QuiltCaptionDataset (loads image_path/caption from
+        # a pre-built selection verbatim). Layout: <data>/pathcap/images/*.jpg with the
+        # selection's image_path a bare filename; selection_path is always supplied.
+        pathcap_path = os.path.join(data_path, "pathcap")
+        image_dir = os.path.join(pathcap_path, "images")
+        selection = kwargs.pop("selection_path", None)
+        if isinstance(selection, dict):
+            train_sel, val_sel = selection.get("train"), selection.get("val")
+        elif isinstance(selection, str):
+            train_sel, val_sel = selection, None
+        else:
+            train_sel = val_sel = None
+        train_dataset = QuiltCaptionDataset(
+            image_dir=image_dir, transform=transform,
+            split="train", selection_path=train_sel, **kwargs,
+        )
+        val_dataset = QuiltCaptionDataset(
+            image_dir=image_dir, transform=transform,
+            split="val", selection_path=val_sel, **kwargs,
+        )
+        train_dataset.name = "pathcap"
+        val_dataset.name = "pathcap"
 
     return train_dataset, val_dataset
 

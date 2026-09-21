@@ -66,6 +66,7 @@ if __name__ == "__main__":
         num_workers=config["features"]["num_workers"],
         label_templates=config["features"]["label_templates"],
         template_key=config["features"]["template_key"],
+        selection_path=config["features"].get("selection_path"),
     )
 
     # No eval datasets here: this sweep only trains + checkpoints (eval is

@@ -1,0 +1,56 @@
+defaults: !include ../../default.yaml
+
+# Pathology PAL (headline): frozen UNI (vision) + PubMedBERT (text), token-level
+# K=512, trained on a filtered/subsampled Quilt-1M selection. layer_img/layer_txt
+# are PROVISIONAL last-layer pins for the smoke — replace with mutual-kNN layer
+# selection before the real runs.
+overrides:
+    alignment:
+        llm_model_name: "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext"
+        lvm_model_name: "hf-hub:MahmoodLab/UNI"
+
+    features:
+        dataset: "quilt1m"
+        selection_path:
+            train: "/home/shiwon/STRUCTURE/data/quilt1m/selections/quilt_openpath-quilt_train_conch0.2_seed42.csv"
+            val: "/home/shiwon/STRUCTURE/data/quilt1m/selections/quilt_openpath-quilt_val_full_seed42.csv"
+        batch_size: 64
+        num_workers: 0
+        layer_img: 23    # UNI ViT-L last block (0..23)
+        layer_txt: 12    # PubMedBERT-base last hidden (0..12)
+
+    layer_selection:
+        best_only: true
+        last_only: false
+
+    training:
+        token_level: true
+
+        alignment_layer_name: "PALAlignmentLayer"
+        alignment_layer_kwargs:
+            num_anchors: 512
+            pool_temperature: 0.05    # softer than the 0.03 natural-image default —
+                                      # pathology signal is distributed/global (see notes)
+            projector_dim: 0
+
+        batch_size: 4096
+
+        clip_loss_name: "CLIPLoss"
+        clip_loss:
+            temperature: 0.05
+            normalize_latents: true
+            warmup_steps: 1000
+            structure_lambda: 0
+            structure_levels: 1
+            structure_margin: 0.0
+            structure_weighting: "none"
+
+        visualize_original_embeddings: false
+        log_structural_preservation: false
+
+    evaluation:
+        token_level_zero_shot: true
+        zero_shot_datasets:
+            - "crc100k"
+            - "pcam"
+        retrieval_datasets: []

@@ -1,0 +1,38 @@
+# conda env for the frozen-VLM baseline scripts in this directory
+# (CLIP, CONCH, QuiltNet, PLIP; natural-image CLIP reference + MaskCLIP).
+#
+# Kept SEPARATE from the PAL `structure` env on purpose: open_clip pulls in
+# timm >= 1.0, and the PAL pipeline's torch.fx feature extractor only works with
+# timm 0.9.16. Never install open_clip into `structure`.
+#
+#   conda env create -f scripts/vlm_baselines/environment_vlm_eval.yml
+#   conda activate vlm_eval
+#
+# MUSK needs an older torch/timm and has its own env: see musk_env_setup.sh.
+name: vlm_eval
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      # torch/cu118 to match the `structure` env (same driver); other CUDA builds work too
+      - --extra-index-url https://download.pytorch.org/whl/cu118
+      - torch==2.1.2+cu118
+      - torchvision==0.16.2+cu118
+      - timm==1.0.28
+      - open_clip_torch==3.3.0
+      - transformers==4.45.2
+      - huggingface-hub==0.29.3
+      - safetensors==0.8.0
+      - ftfy==6.3.1
+      - regex
+      - numpy==1.26.4
+      - pandas==2.3.3
+      - scikit-learn==1.7.2
+      - pillow==12.2.0
+      - h5py==3.16.0
+      # CONCH (mahmoodlab/CONCH) — editable install from a clone, pinned to the
+      # commit the paper numbers were produced with. Model weights are gated on
+      # HF (MahmoodLab/CONCH); log in with `huggingface-cli login` first.
+      - -e git+https://github.com/mahmoodlab/CONCH.git@141cc09c7d4ff33d8eda562bd75169b457f71a62#egg=conch

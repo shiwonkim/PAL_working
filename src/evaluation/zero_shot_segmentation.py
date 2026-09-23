@@ -25,10 +25,12 @@ Methods
 -------
 1. ``direct_cosine``   — raw encoder patches vs raw text embeddings
                          (no alignment layer; baseline)
-2. ``fa``     — FA ``local_vision_proj`` per-patch features
-                         vs FA full text forward (factorized decoding)
-3. ``anchor_codebook`` — PAL-token: factorized S_pa @ S_ac decoding
-4. ``linear_perpatch`` — Linear/MLP per-patch projection (direct decoding)
+2. ``fa``     — FA ``local_vision_proj`` per-patch features vs FA full text forward
+3. ``anchor_codebook`` — PAL-token: per-patch anchor-similarity profile vs text profile
+4. ``linear_perpatch`` — Linear/MLP per-patch projection
+
+All methods share one decode step: L2-normalize the per-patch descriptor and take
+cosine similarity with the (L2-normalized) class-text descriptor.
 
 Text strategies
 ---------------
@@ -266,11 +268,6 @@ class SegmentationMethod:
     #: ``"cls"`` if strict CLS is the natural text pooling; ``"avg"`` or
     #: ``"none"`` otherwise. Only consumed by the shared text path.
     pool_txt: str = "avg"
-    #: ``"direct"``  — L2-norm patch feats, then cosine with text (default).
-    #: ``"factorized"`` — raw S_pa @ S_ac with no per-patch L2-norm, making
-    #:   anchors an explicit semantic bridge: S_pc = S_pa @ S_ac where
-    #:   S_pa[p,k] = cos(patch_p, anchor_k), S_ac[k,c] = text_profile[c,k].
-    decoding: str = "direct"
 
     def get_patch_features(
         self, layer_feats: torch.Tensor, device: torch.device, n_prefix: int = 1
@@ -336,18 +333,13 @@ class FAMethod(SegmentationMethod):
 
     Text side uses the full trained FA text pipeline (``local_text_proj`` +
     ``text_proj``), identical to training.
-
-    Uses factorized decoding (no per-patch L2 norm) to match the original
-    FA segmentation eval protocol: unnormalized projected patches
-    are compared against unit-norm text features via dot product.
     """
     name = "fa"
     pool_txt = "none"
 
-    def __init__(self, alignment_image, alignment_text, decoding: str = "direct"):
+    def __init__(self, alignment_image, alignment_text):
         self.alignment_image = alignment_image
         self.alignment_text = alignment_text
-        self.decoding = decoding
 
     def get_patch_features(self, layer_feats, device, n_prefix: int = 1):
         with torch.no_grad():
@@ -381,21 +373,16 @@ class FAMethod(SegmentationMethod):
 class PALAnchorCodebookMethod(SegmentationMethod):
     """PAL: each patch is encoded as a K-dim anchor-similarity
     vector; each class is encoded as a K-dim CAP profile. Both sides live
-    in the same anchor codebook.
-
-    Factorized decoding: raw S_pa @ S_ac with NO per-patch L2-norm, making
-    anchors an explicit semantic bridge:
-        S_pc[p,c] = Σ_k cos(patch_p, anchor_k) · profile[c,k]
-    Consistent across encoder scales. Matches FA protocol.
+    in the same anchor codebook. The per-patch profile is compared to the
+    per-class profile by cosine similarity in the shared decode step.
     """
     name = "anchor_codebook"
     pool_txt = "none"
 
     def __init__(self, alignment_image, alignment_text, token_level: bool = True,
-                 pool_txt: str = "avg", decoding: str = "direct"):
+                 pool_txt: str = "avg"):
         self.alignment_image = alignment_image
         self.alignment_text = alignment_text
-        self.decoding = decoding
         # CLS-vs-token is a config choice, not a class property (the merged
         # PALAlignmentLayer serves both): the text templates must be encoded the
         # same way the checkpoint's text side was trained — token when
@@ -420,13 +407,13 @@ class PALAnchorCodebookMethod(SegmentationMethod):
                 self.alignment_image.anchors, dim=-1
             )
             S_pa = z_n @ a_n.T                        # (P, K)
-            # Apply the layer's profile post-processing (ASIF-style topk sparsify
-            # + sim_exponent), matching how PALAlignmentLayer.forward builds the
-            # profile the text side is encoded with. No-op for standard PAL
-            # (topk=None, sim_exponent=1) — under direct decoding the extra
-            # L2-normalize is idempotent, so plain-PAL seg is unchanged; only
-            # fixed-anchor ASIF runs with sim_exponent>1 differ (else the image
-            # patches would be raw cosine while the text profiles are exponentiated).
+            # Apply the layer's profile post-processing (L2-norm, + ASIF-style
+            # topk sparsify / sim_exponent when configured), exactly as
+            # PALAlignmentLayer.forward builds the profile the text side is
+            # encoded with — so the image patches live in the same profile space.
+            # No-op beyond L2-norm for standard PAL (topk=None, sim_exponent=1);
+            # the exponent matters for fixed-anchor ASIF. The decode's L2-norm
+            # is then an idempotent pass-through for these already-unit profiles.
             postproc = getattr(self.alignment_image, "_postprocess", None)
             if postproc is not None:
                 S_pa = postproc(S_pa)
@@ -468,11 +455,10 @@ class LinearPerPatchMethod(SegmentationMethod):
     name = "linear_perpatch"
     pool_txt = "none"
 
-    def __init__(self, alignment_image, alignment_text, decoding: str = "direct",
+    def __init__(self, alignment_image, alignment_text,
                  token_level: bool = False, pool_txt: str = "avg"):
         self.alignment_image = alignment_image
         self.alignment_text = alignment_text
-        self.decoding = decoding
         # For token-level checkpoints (e.g. SAIL) the text side stays token-level.
         # For CLS baselines (linear/mlp) the text must be pooled the SAME way the
         # layer was trained (config pool_txt: avg/last) so train/eval pooling match
@@ -848,20 +834,13 @@ def run_eval(
         n_prefix = int(getattr(vision_model, "num_prefix_tokens", 1))
         patch_feats = method.get_patch_features(feats, device, n_prefix).float()  # (P, D_m)
 
-        decoding = getattr(method, "decoding", "direct")
-        if decoding == "factorized":
-            # Explicit anchor factorization: S_pc = S_pa @ S_ac
-            # S_pa: (P, K) raw cosine — no L2 norm
-            # S_ac: (K, C) = text_feats.T — text profiles transposed
-            S_pa = patch_feats                          # (P, K)
-            S_ac = text_feats.T                         # (K, C)
-            assert S_pa.shape[-1] == S_ac.shape[0], \
-                f"K mismatch: S_pa {S_pa.shape} vs S_ac {S_ac.shape}"
-            sim = S_pa @ S_ac                           # (P, C)
-        else:
-            # Direct decoding: L2-norm patch feats, cosine with text
-            patch_feats = F.normalize(patch_feats, dim=-1)
-            sim = patch_feats @ text_feats.T            # (P, C)
+        # Decode = cosine between each patch descriptor and each class-text
+        # descriptor. L2-normalize here as the single, defensive precondition for
+        # cosine: raw-projection methods (fa / linear_perpatch / direct_cosine)
+        # need it; PAL (anchor_codebook) already emits unit-norm profiles via its
+        # _postprocess, so for those this normalize is an idempotent pass-through.
+        patch_feats = F.normalize(patch_feats, dim=-1)
+        sim = patch_feats @ text_feats.T                # (P, C)
 
         P = sim.shape[0]
         h = int(round(math.sqrt(P)))
@@ -928,7 +907,6 @@ def save_per_class_csv(
 
 def build_method(
     name: str, alignment_image, alignment_text, cfg: dict,
-    decoding_override: str | None = None,
 ) -> SegmentationMethod:
     pool_txt = cfg["features"].get("pool_txt", "avg")
     if name == "direct_cosine":
@@ -936,27 +914,22 @@ def build_method(
     if name == "fa":
         if alignment_image is None:
             raise ValueError("fa method requires --checkpoint")
-        dec = decoding_override if decoding_override else "direct"
         return FAMethod(
             alignment_image=alignment_image, alignment_text=alignment_text,
-            decoding=dec,
         )
     if name == "anchor_codebook":
         if alignment_image is None:
             raise ValueError("anchor_codebook requires --checkpoint")
-        dec = decoding_override if decoding_override else "direct"
         return PALAnchorCodebookMethod(
             alignment_image=alignment_image, alignment_text=alignment_text,
             token_level=bool(cfg["training"].get("token_level", False)),
-            pool_txt=pool_txt, decoding=dec,
+            pool_txt=pool_txt,
         )
     if name == "linear_perpatch":
         if alignment_image is None:
             raise ValueError("linear_perpatch requires --checkpoint")
-        dec = decoding_override if decoding_override else "direct"
         return LinearPerPatchMethod(
             alignment_image=alignment_image, alignment_text=alignment_text,
-            decoding=dec,
             token_level=bool(cfg["training"].get("token_level", False)),
             pool_txt=pool_txt,
         )
@@ -1040,10 +1013,6 @@ def main():
         help="Optional cap on val set size for quick smoke tests",
     )
     parser.add_argument(
-        "--decoding", default=None, choices=["direct", "factorized"],
-        help="Override decoding mode for all methods (default: method-specific)",
-    )
-    parser.add_argument(
         "--output-csv",
         default=None,
         help="Per-class IoU CSV output path (default: <dataset>_seg_iou.csv next to ckpt)",
@@ -1093,8 +1062,7 @@ def main():
     # Run each method × strategy combination
     results = []
     for method_name in methods:
-        method = build_method(method_name, alignment_image, alignment_text, cfg,
-                              decoding_override=args.decoding)
+        method = build_method(method_name, alignment_image, alignment_text, cfg)
         for strategy in strategies:
             logger.info(f"==> {method_name} / {strategy}")
             res = run_eval(

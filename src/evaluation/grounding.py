@@ -2,8 +2,8 @@
 
 Reuses the zero-shot-segmentation CLI's method / encoder infrastructure so the
 per-patch descriptors (``get_patch_features``) and text descriptors
-(``get_text_features``) are produced exactly as in segmentation, with the same
-``direct`` / ``factorized`` decoding. The only differences are the dataset
+(``get_text_features``) are produced exactly as in segmentation, and the same
+decode step (per-patch L2-norm + cosine). The only differences are the dataset
 (Flickr30k Entities phrases + boxes) and the metric.
 
 Metric (pointing game, Akbari et al., CVPR 2019): for each annotated phrase we
@@ -21,7 +21,7 @@ Usage:
         --config_path configs/pal/vitl_roberta/token_k512.yaml \
         --ckpt <checkpoint.pth> --method anchor_codebook --label pal \
         --layer-img 23 --layer-txt 24 \
-        [--decoding direct] [--text-strategy raw] [--out_csv <path>]
+        [--text-strategy raw] [--out_csv <path>]
 """
 import argparse
 import csv
@@ -98,11 +98,10 @@ def _find_image(image_root: Path, image_id: str) -> Path:
     raise FileNotFoundError(f"image {image_id}.jpg not found under {image_root}")
 
 
-def _decode_sim(method, patch_feats, text_feats):
-    """(P, D_m), (N, D_m) -> (P, N) similarity, matching the seg decode branch."""
-    decoding = getattr(method, "decoding", "direct")
-    if decoding == "factorized":
-        return patch_feats @ text_feats.T
+def _decode_sim(patch_feats, text_feats):
+    """(P, D_m), (N, D_m) -> (P, N) cosine, matching the seg decode step:
+    L2-normalize the per-patch descriptor and dot with the (already-normalized)
+    text descriptors."""
     return F.normalize(patch_feats, dim=-1) @ text_feats.T
 
 
@@ -144,7 +143,7 @@ def evaluate_pointing(
             )
             text_feats = F.normalize(text_feats.float().to(device), dim=-1)
 
-            sim = _decode_sim(method, patch_feats, text_feats)  # (P, N)
+            sim = _decode_sim(patch_feats, text_feats)  # (P, N)
         P, N = sim.shape
         h = int(round(math.sqrt(P)))
         if h * h != P:
@@ -188,7 +187,6 @@ def main():
     p.add_argument("--label", default="")
     p.add_argument("--layer-img", type=int, default=23)
     p.add_argument("--layer-txt", type=int, default=24)
-    p.add_argument("--decoding", default=None, choices=["direct", "factorized"])
     p.add_argument("--text-strategy", default="raw", choices=["raw", "ensemble"])
     p.add_argument("--image-root", default="data/flickr30k")
     p.add_argument("--entities-root", default="data/flickr30k_entities")
@@ -210,10 +208,7 @@ def main():
     ckpt = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     alignment_image = load_alignment_layer(ckpt["alignment_image"], "image", device)
     alignment_text = load_alignment_layer(ckpt["alignment_text"], "text", device)
-    method = build_method(
-        args.method, alignment_image, alignment_text, cfg,
-        decoding_override=args.decoding,
-    )
+    method = build_method(args.method, alignment_image, alignment_text, cfg)
 
     if args.split_file and Path(args.split_file).exists():
         image_ids = load_ids_from_txt(Path(args.split_file))
@@ -221,7 +216,6 @@ def main():
         image_ids = load_test_ids(Path(args.split_json))
     logger.info(
         f"[{args.label or args.method}] method={args.method} "
-        f"decoding={getattr(method, 'decoding', 'direct')} "
         f"text={args.text_strategy} test_images={len(image_ids)}"
     )
 
@@ -243,10 +237,9 @@ def main():
         with open(out, "a", newline="") as f:
             w = csv.writer(f)
             if write_header:
-                w.writerow(["label", "method", "decoding", "text_strategy",
+                w.writerow(["label", "method", "text_strategy",
                             "pointing_acc", "hits", "total", "images"])
-            w.writerow([args.label, args.method,
-                        getattr(method, "decoding", "direct"), args.text_strategy,
+            w.writerow([args.label, args.method, args.text_strategy,
                         f"{res['pointing_acc']:.4f}", res["hits"], res["total"],
                         res["images"]])
         logger.info(f"wrote {out}")

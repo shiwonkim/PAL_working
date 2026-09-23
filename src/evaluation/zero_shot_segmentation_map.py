@@ -59,7 +59,6 @@ class MAPPerPatchMethod(SegmentationMethod):
                  pool_txt: str = "avg"):
         self.alignment_image = alignment_image
         self.alignment_text = alignment_text
-        self.decoding = "direct"
         self.token_level = token_level
         self.pool_txt = pool_txt
 

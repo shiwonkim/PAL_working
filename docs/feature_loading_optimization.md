@@ -10,6 +10,40 @@ case. This doc covers the **single-corpus** case we actually hit, whose diagnosi
 
 ---
 
+## 0. Background: where the data lives and why it matters
+
+```
+[ disk / SSD ]     ~1-2 GB/s     the 179 GB cache file lives here
+      |  read
+[ RAM  377 GB ]    ~10-50 GB/s   where the file gets held
+      |  PCIe copy (~10-25 GB/s)
+[ GPU VRAM 45 GB ] ~1000 GB/s    the only memory the GPU can compute on
+      |
+[ GPU compute ]
+```
+
+Two constraints follow. The GPU computes **only** on what is in its 45 GB of VRAM, so a 179 GB
+cache can never sit there — each step must copy the slice it needs from RAM across PCIe. And the
+throughput of the whole pipeline is set by its slowest active stage, so "which stage is actually
+working" is the first thing to measure, not guess.
+
+**Two kinds of RAM, and the distinction our bug turns on:**
+
+| | file pages (`RssFile`) | anonymous memory (`RssAnon`) |
+|---|---|---|
+| what it is | a copy of bytes that exist in a file | data the process created |
+| backed by | the file on disk | nothing — RAM is the only copy |
+| under memory pressure | can be **evicted** (re-read later) | cannot be dropped → OOM / swap |
+
+`mmap` maps a file into the address space so only the pages actually touched are resident, and
+they stay evictable file pages. `FeatureStore` opens the cache that way, which is correct — but
+what the process ends up holding is what `RssFile` vs `RssAnon` reports, and that is the
+measurement in §1 below. Once a tensor is *materialised* (any boolean mask or fancy index makes
+a new tensor), the result is anonymous: the tie to the file is gone and the OS can no longer
+reclaim it.
+
+---
+
 ## 1. What we measured (not assumed)
 
 Live run: UNI2-h + PubMedBERT on PathCap-train, 220,318 rows, token cache
@@ -47,7 +81,9 @@ gather itself plus the absence of prefetch.
 Naively re-reading each batch from disk would be **slower, not faster**: disk traffic is
 currently zero, and this would reintroduce it as *random* reads. Speed comes from overlap and
 locality, not from streaming per se. Streaming's payoff is **RAM**; the speed payoff is
-prefetch + sequentialization. They must be done together.
+prefetch + sequentialization. They are two separate fixes — a speed one (make CPU gather and
+GPU compute overlap) and a memory one (keep the mapping file-backed, §0) — and the plan below
+does both.
 
 ---
 
